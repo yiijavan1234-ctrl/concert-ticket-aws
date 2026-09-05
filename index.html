@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SoundWave Tickets</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <a class="brand" href="#concerts" aria-label="SoundWave Tickets home">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span>SoundWave Tickets</span>
+        </a>
+
+        <div class="nav-actions">
+            <a href="#concerts">Concerts</a>
+            <a href="#profile">Profile</a>
+            <a href="#bookings">Bookings</a>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero" aria-labelledby="page-title">
+            <div>
+                <p class="eyebrow">Static concert ticketing demo</p>
+                <h1 id="page-title">Book shows and manage your account in one page.</h1>
+                <p class="hero-copy">Everything works in the browser, so this can run directly from GitHub Pages, AWS S3, or AWS Amplify without a backend server.</p>
+            </div>
+            <div class="hero-panel" aria-label="Featured event artwork">
+                <div class="stage-lights" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <p>Live seats available</p>
+                <strong id="profileGreeting">Create your profile to start booking.</strong>
+            </div>
+        </section>
+
+        <section class="dashboard-grid">
+            <article class="panel profile-panel" id="profile">
+                <div class="section-heading">
+                    <p class="eyebrow">Account</p>
+                    <h2>Profile</h2>
+                </div>
+
+                <form id="profileForm" class="form-stack">
+                    <input type="hidden" id="profileId">
+
+                    <label for="fullName">Full name</label>
+                    <input type="text" id="fullName" name="fullName" autocomplete="name" placeholder="Alya Rahman" required>
+
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" autocomplete="email" placeholder="alya@example.com" required>
+
+                    <label for="phone">Phone</label>
+                    <input type="tel" id="phone" name="phone" autocomplete="tel" placeholder="+60 12 345 6789" required>
+
+                    <label for="city">City</label>
+                    <input type="text" id="city" name="city" autocomplete="address-level2" placeholder="Kuala Lumpur">
+
+                    <div class="button-row">
+                        <button class="primary-btn" type="submit" id="saveProfileBtn">Save profile</button>
+                        <button class="danger-btn" type="button" id="deleteProfileBtn">Delete profile</button>
+                    </div>
+                </form>
+
+                <div id="profileSummary" class="summary-box" aria-live="polite"></div>
+            </article>
+
+            <section class="concerts" id="concerts" aria-labelledby="concerts-title">
+                <div class="section-heading">
+                    <p class="eyebrow">Events</p>
+                    <h2 id="concerts-title">Concerts</h2>
+                </div>
+                <div class="product-grid" id="concertList"></div>
+            </section>
+        </section>
+
+        <section class="panel bookings-panel" id="bookings">
+            <div class="section-heading">
+                <p class="eyebrow">Orders</p>
+                <h2>My bookings</h2>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Event</th>
+                            <th>Date</th>
+                            <th>Tickets</th>
+                            <th>Total</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bookingRows"></tbody>
+                </table>
+            </div>
+
+            <div id="emptyBookings" class="empty-state">No bookings yet. Choose a concert and book your seats.</div>
+        </section>
+    </main>
+
+    <dialog id="editBookingDialog">
+        <form method="dialog" class="dialog-card" id="editBookingForm">
+            <input type="hidden" id="editBookingId">
+            <h2>Edit booking</h2>
+
+            <label for="editQuantity">Tickets</label>
+            <input type="number" id="editQuantity" min="1" max="5" required>
+
+            <div class="button-row">
+                <button class="secondary-btn" value="cancel" type="button" id="cancelEditBtn">Cancel</button>
+                <button class="primary-btn" value="save" type="submit">Update booking</button>
+            </div>
+        </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
