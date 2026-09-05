@@ -2,7 +2,9 @@
 
 const PAGE = document.body.dataset.page || "events";
 const ROOT = PAGE === "admin" ? "../" : "";
-const KEYS = { profile: "soundwave.profile", bookings: "soundwave.bookings", events: "soundwave.events", session: "soundwave.session" };
+const KEYS = { accounts: "soundwave.accounts", profile: "soundwave.profile", bookings: "soundwave.bookings", events: "soundwave.events", session: "soundwave.session" };
+const API_URL = ROOT + "php/api.php";
+const AUTH_URL = ROOT + "php/auth.php";
 const ARTIST_IMAGE = "https://media.stubhubstatic.com/stubhub-v2-catalog/d_vgg-defaultLogo.jpg/q_auto:good,f_auto,c_fill,g_auto,w_1200,h_736/categories/26202/6579799";
 const defaults = [
     { id: "weeknd-kuala-lumpur-2026-11-04", name: "The Weeknd", date: "2026-11-04", time: "20:30", venue: "Bukit Jalil National Stadium", city: "Kuala Lumpur, Malaysia", price: 149 },
@@ -29,19 +31,95 @@ function validEvent(event) {
         typeof event.venue === "string" && /^\d{4}-\d{2}-\d{2}$/.test(event.date) &&
         /^\d{2}:\d{2}$/.test(event.time) && Number.isFinite(event.price) && event.price > 0;
 }
+function validProfile(value) {
+    return value && typeof value.id === "string" && typeof value.fullName === "string" &&
+        typeof value.email === "string" && typeof value.phone === "string" && typeof value.city === "string";
+}
 let events = read(KEYS.events, defaults);
 if (!Array.isArray(events)) events = [...defaults];
 events = events.filter(validEvent);
 let profile = read(KEYS.profile, null);
-if (!profile || typeof profile.id !== "string" || typeof profile.fullName !== "string" || typeof profile.email !== "string") profile = null;
+if (!validProfile(profile)) profile = null;
+let accounts = read(KEYS.accounts, []);
+if (!Array.isArray(accounts)) accounts = [];
+accounts = accounts.filter(validProfile).filter((account, index, list) => list.findIndex((item) => item.id === account.id) === index);
+// Preserve the one-account version of this demo when it upgrades to multiple local accounts.
+if (profile && !accounts.some((account) => account.id === profile.id)) accounts.unshift(profile);
+try { localStorage.setItem(KEYS.accounts, JSON.stringify(accounts)); } catch { /* The normal save path reports storage errors. */ }
+if (profile) profile = accounts.find((account) => account.id === profile.id) || null;
 let bookings = read(KEYS.bookings, []);
 if (!Array.isArray(bookings)) bookings = [];
-bookings = bookings.filter((b) => b && typeof b.id === "string" && typeof b.concertId === "string" && Number.isInteger(b.quantity) && b.quantity >= 1 && b.quantity <= 5);
+bookings = bookings.map((booking) => ({ ...booking, profileId: booking.profileId || profile?.id || "" }))
+    .filter((b) => b && typeof b.id === "string" && typeof b.concertId === "string" && typeof b.profileId === "string" && accounts.some((account) => account.id === b.profileId) && Number.isInteger(b.quantity) && b.quantity >= 1 && b.quantity <= 5);
+try { localStorage.setItem(KEYS.bookings, JSON.stringify(bookings)); } catch { /* The normal save path reports storage errors. */ }
 let active = false;
 try { active = Boolean(profile && sessionStorage.getItem(KEYS.session) === profile.id); } catch { /* Storage can be disabled in private browsing. */ }
+let serverAvailable = false;
 function startSession() {
-    try { sessionStorage.setItem(KEYS.session, profile.id); active = true; return true; }
+    try { if (profile?.id) sessionStorage.setItem(KEYS.session, profile.id); active = Boolean(profile); return true; }
     catch { toast("Please allow browser storage to continue."); return false; }
+}
+async function requestJson(url, action, payload = {}) {
+    const response = await fetch(url + "?action=" + encodeURIComponent(action), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "same-origin"
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.message || "Database request failed.");
+    return data;
+}
+async function loadServerState() {
+    try {
+        const response = await fetch(API_URL + "?action=bootstrap", { credentials: "same-origin" });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.message || "Database is not ready.");
+        applyServerState(data);
+        serverAvailable = true;
+    } catch {
+        serverAvailable = false;
+    }
+}
+function applyServerState(data) {
+    if (Array.isArray(data.events)) events = data.events.filter(validEvent);
+    if (Array.isArray(data.accounts)) accounts = data.accounts.filter(validProfile);
+    profile = validProfile(data.profile) ? data.profile : null;
+    bookings = Array.isArray(data.bookings) ? data.bookings.filter((b) =>
+        b && typeof b.id === "string" && typeof b.concertId === "string" && typeof b.profileId === "string" && Number.isInteger(b.quantity) && b.quantity >= 1 && b.quantity <= 5
+    ) : [];
+    active = Boolean(profile);
+    try {
+        if (profile) sessionStorage.setItem(KEYS.session, profile.id);
+        else sessionStorage.removeItem(KEYS.session);
+        if (data.admin) sessionStorage.setItem(ADMIN_SESSION_KEY, "admin");
+        else sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    } catch { /* Server session is still the source of truth. */ }
+}
+async function refreshServerState() {
+    if (!serverAvailable) return;
+    await loadServerState();
+    shell();
+}
+function currentBookings() {
+    return profile ? bookings.filter((booking) => booking.profileId === profile.id) : [];
+}
+async function activateAccount(accountId) {
+    const selected = accounts.find((account) => account.id === accountId);
+    if (!selected) { toast("That account is no longer available. Refresh this page and try again."); return; }
+    if (serverAvailable) {
+        try {
+            const data = await requestJson(AUTH_URL, "sign_in", { profileId: accountId });
+            applyServerState(data);
+            continueAfterSignIn();
+        } catch (error) {
+            toast(error.message);
+        }
+        return;
+    }
+    profile = selected;
+    if (!save(KEYS.profile, profile)) return;
+    if (startSession()) continueAfterSignIn();
 }
 let toastTimer;
 function toast(message) {
@@ -74,7 +152,7 @@ function shell() {
         '<a href="' + ROOT + 'ticket.html"' + (PAGE === "tickets" ? ' aria-current="page"' : "") + '>My tickets</a>' +
         '<a id="accountLink" href="' + profileLink() + '">' + icon("user-round") + '<span>' + (active ? "My profile" : "Sign in") + '</span></a>' +
         (active ? '<a class="signout-link" href="' + ROOT + 'signout.html" title="Sign out">' + icon("log-out") + '<span>Sign out</span></a>' : "") + '</div></nav>';
-    $("#siteFooter").innerHTML = '<a class="brand" href="' + ROOT + 'index.html">sound<span>wave</span>.</a><p>Demo events and prices. No payment is collected.<br>Profiles and bookings are saved only in this browser.</p><a href="' + ROOT + 'admin/crud.html">Event management</a>';
+    $("#siteFooter").innerHTML = '<a class="brand" href="' + ROOT + 'index.html">sound<span>wave</span>.</a><p>Demo events and prices. No payment is collected.<br>' + (serverAvailable ? 'Profiles and bookings are saved in the database.' : 'Profiles and bookings are saved only in this browser.') + '</p><a href="' + ROOT + 'admin/crud.html">Event management</a>';
     $(".site-search").addEventListener("submit", (e) => {
         e.preventDefault();
         if (PAGE === "events") renderEventLists();
@@ -133,27 +211,59 @@ function accountRoute(file) {
 function signInPage() {
     $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
         '<p class="eyebrow">Your SoundWave account</p><h1>Sign in</h1>' +
-        (profile ? '<p class="muted">' + (active ? 'You are signed in.' : 'Continue with the profile saved in this browser.') + '</p>' +
-            '<div class="saved-profile"><span class="saved-profile-icon">' + icon("user-round") + '</span><div><strong>' + html(profile.fullName) + '</strong><p>' + html(profile.email) + '</p></div></div>' +
-            (active ? '<a class="primary-btn continue-profile" href="' + signInDestination() + '">' + icon("arrow-right") + (new URLSearchParams(location.search).get("event") ? 'Continue to tickets' : 'Go to my profile') + '</a>' :
-                '<button class="primary-btn continue-profile" id="continueProfile" type="button">' + icon("log-in") + 'Continue as ' + html(profile.fullName) + '</button>') :
+        (accounts.length ? '<p class="muted">Choose a profile saved in this browser.</p><div class="account-list">' + accounts.map((account) =>
+            '<button class="saved-profile" type="button" data-account-id="' + html(account.id) + '"><span class="saved-profile-icon">' + icon("user-round") + '</span><span><strong>' + html(account.fullName) + '</strong><small>' + html(account.email) + '</small></span><span class="account-action">' + icon(active && profile?.id === account.id ? "arrow-right" : "log-in") + (active && profile?.id === account.id ? "Open profile" : "Continue") + '</span></button>').join("") + '</div>' :
             '<p class="muted">No profile is saved in this browser yet. Create an account to get started.</p>') +
         '<p><a class="text-link" href="' + accountRoute("createaccount.html") + '">' + icon("user-plus") + 'Create account</a></p>' +
         '<div class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a>' +
         (active ? '<a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a>' : '') + '</div></section>' +
         '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
-    $("#continueProfile")?.addEventListener("click", () => {
-        const saved = read(KEYS.profile, null);
-        if (!saved || saved.id !== profile.id || saved.fullName !== profile.fullName || saved.email !== profile.email) {
-            toast("Your saved profile changed. Refresh this page before continuing.");
+    document.querySelectorAll("[data-account-id]").forEach((button) => button.addEventListener("click", () => activateAccount(button.dataset.accountId)));
+    refreshIcons();
+}
+function createAccountPage() {
+    $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
+        '<p class="eyebrow">Join SoundWave</p><h1>Create account</h1><p class="muted">Enter your details to create your concert profile.</p>' +
+        '<form id="createAccountForm" class="form-stack"><label for="fullName">Full name</label><input id="fullName" name="fullName" autocomplete="name" maxlength="100" required>' +
+        '<label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" maxlength="150" required>' +
+        '<div class="form-pair"><div><label for="phone">Phone number</label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="30" required></div>' +
+        '<div><label for="city">City</label><input id="city" name="city" autocomplete="address-level2" maxlength="100"></div></div>' +
+        '<p class="login-error" id="createAccountError" role="alert"></p>' +
+        '<button class="primary-btn" id="createAccountBtn" type="submit">' + icon("user-plus") + 'Create account</button></form>' +
+        '<p class="muted account-return">Already have an account? <a class="text-link" href="' + accountRoute("signin.html") + '">Sign in</a></p></section>' +
+        '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
+    $("#createAccountForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const next = { id: id("profile"), fullName: $("#fullName").value.trim(), email: $("#email").value.trim(), phone: $("#phone").value.trim(), city: $("#city").value.trim() };
+        if (!next.fullName || !next.email || !next.phone || !$("#createAccountForm").reportValidity()) {
+            $("#createAccountError").textContent = 'Enter a name, valid email address and phone number.';
             return;
         }
-        if (startSession()) continueAfterSignIn();
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(AUTH_URL, "create_account", next);
+                applyServerState({ ...data, profile, bookings });
+                continueToSignIn();
+            } catch (error) {
+                $("#createAccountError").textContent = error.message;
+            }
+            return;
+        }
+        if (accounts.some((account) => account.email.toLowerCase() === next.email.toLowerCase())) {
+            $("#createAccountError").textContent = "An account with this email already exists in this browser. Choose another email or sign in.";
+            return;
+        }
+        const nextAccounts = [...accounts, next];
+        if (!save(KEYS.accounts, nextAccounts)) return;
+        accounts = nextAccounts;
+        continueToSignIn();
     });
     refreshIcons();
 }
+function continueToSignIn() {
+    location.href = accountRoute("signin.html");
+}
 function profilePage() {
-    if (PAGE === "register" && profile && !active) { signInPage(); return; }
     if (PAGE === "account" && !active) {
         $("#app").innerHTML = '<section class="admin-login"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
             '<p class="eyebrow">Your SoundWave account</p><h1>Your profile</h1><p class="muted">Sign in to view and manage your saved profile.</p>' +
@@ -162,37 +272,57 @@ function profilePage() {
         refreshIcons();
         return;
     }
-    const returning = Boolean(profile);
     $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
-        '<p class="eyebrow">Your SoundWave account</p><h1>' + (active ? "Your profile" : returning ? "Welcome back" : "Create account") + '</h1>' +
-        '<p class="muted" id="profileGreeting">' + (returning ? "Your details, ready for your next event." : "Create your profile to save your tickets.") + '</p>' +
-        (active ? '<p><a class="text-link" href="' + (PAGE === "account" ? 'ticket.html' : accountRoute("profile.html")) + '">' + icon(PAGE === "account" ? "ticket" : "user-round") + (PAGE === "account" ? 'My tickets' : 'Go to my profile') + '</a></p>' : "") +
-        (PAGE === "register" && returning ? '<p class="muted">This browser already has a saved profile. You can update it below.</p>' : "") +
+        '<p class="eyebrow">Your SoundWave account</p><h1>Your profile</h1>' +
+        '<p class="muted" id="profileGreeting">Your details, ready for your next event.</p>' +
+        '<p><a class="text-link" href="ticket.html">' + icon("ticket") + 'My tickets</a></p>' +
         '<form id="profileForm" class="form-stack"><input id="profileId" type="hidden" value="' + html(profile?.id || "") + '">' +
         '<label for="fullName">Full name</label><input id="fullName" autocomplete="name" maxlength="100" required value="' + html(profile?.fullName || "") + '">' +
         '<label for="email">Email address</label><input id="email" type="email" autocomplete="email" maxlength="150" required value="' + html(profile?.email || "") + '">' +
         '<div class="form-pair"><div><label for="phone">Phone number</label><input id="phone" type="tel" autocomplete="tel" maxlength="30" required value="' + html(profile?.phone || "") + '"></div>' +
         '<div><label for="city">City</label><input id="city" autocomplete="address-level2" maxlength="100" value="' + html(profile?.city || "") + '"></div></div>' +
-        '<button id="saveProfileBtn" class="primary-btn" type="submit">' + icon("check") + (returning ? "Save profile" : "Create account") + '</button></form>' +
-        (PAGE === "register" ? '<p class="muted account-return">Already have a saved profile? <a class="text-link" href="' + accountRoute("signin.html") + '">Sign in</a></p>' : "") +
-        '<div id="profileSummary" class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a>' + (active ? '<a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a>' : "") + (returning ? '<button id="deleteProfileBtn" class="danger-link" type="button">' + icon("trash-2") + 'Delete profile and bookings</button>' : "") + '</div></section>' +
+        '<button id="saveProfileBtn" class="primary-btn" type="submit">' + icon("check") + 'Save profile</button></form>' +
+        '<div id="profileSummary" class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a><a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a><button id="deleteProfileBtn" class="danger-link" type="button">' + icon("trash-2") + 'Delete profile and bookings</button></div></section>' +
         '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
-    $("#profileForm").addEventListener("submit", (e) => {
+    $("#profileForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const next = { id: profile?.id || id("profile"), fullName: $("#fullName").value.trim(), email: $("#email").value.trim(), phone: $("#phone").value.trim(), city: $("#city").value.trim() };
         if (!next.fullName || !next.email || !next.phone) { toast("Enter your name, email and phone number."); return; }
-        if (!save(KEYS.profile, next)) return;
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(API_URL, "update_profile", next);
+                applyServerState(data);
+                shell(); profilePage(); refreshIcons(); toast("Profile saved.");
+            } catch (error) {
+                toast(error.message);
+            }
+            return;
+        }
+        if (accounts.some((account) => account.id !== next.id && account.email.toLowerCase() === next.email.toLowerCase())) { toast("Another account in this browser already uses that email."); return; }
+        const nextAccounts = accounts.map((account) => account.id === next.id ? next : account);
+        if (!save(KEYS.accounts, nextAccounts) || !save(KEYS.profile, next)) return;
+        accounts = nextAccounts;
         profile = next;
         if (!startSession()) return;
-        if (PAGE !== "account" && new URLSearchParams(location.search).has("event")) return continueAfterSignIn();
         shell(); profilePage(); refreshIcons(); toast("Profile saved.");
     });
-    $("#deleteProfileBtn")?.addEventListener("click", () => {
+    $("#deleteProfileBtn")?.addEventListener("click", async () => {
         if (!confirm("Delete your profile and all bookings saved in this browser?")) return;
-        // Write dependent records first so a failed write cannot leave bookings without a profile.
-        if (!save(KEYS.bookings, [])) return;
-        bookings = [];
-        if (!save(KEYS.profile, null)) return;
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(API_URL, "delete_profile");
+                applyServerState(data);
+                shell(); profilePage(); refreshIcons(); toast("Profile and bookings deleted.");
+            } catch (error) {
+                toast(error.message);
+            }
+            return;
+        }
+        const nextBookings = bookings.filter((booking) => booking.profileId !== profile.id);
+        const nextAccounts = accounts.filter((account) => account.id !== profile.id);
+        if (!save(KEYS.bookings, nextBookings) || !save(KEYS.accounts, nextAccounts) || !save(KEYS.profile, null)) return;
+        bookings = nextBookings;
+        accounts = nextAccounts;
         profile = null; active = false;
         try { sessionStorage.removeItem(KEYS.session); } catch { /* No active session remains. */ }
         shell(); profilePage(); refreshIcons(); toast("Profile and bookings deleted.");
@@ -216,36 +346,62 @@ function ticketsPage() {
         '<section class="bookings-section" id="bookings"><div class="section-title"><h2>My bookings</h2><a class="text-link" href="index.html">Explore events ' + icon("arrow-right") + '</a></div><div id="bookingRows"></div></section>' +
         '<dialog id="editBookingDialog"><form id="editBookingForm" class="form-stack"><div class="section-title"><h2>Edit booking</h2><button class="icon-btn" id="cancelEditBtn" type="button" aria-label="Close" title="Close">' + icon("x") + '</button></div><input id="editBookingId" type="hidden"><label for="editQuantity">Quantity</label><select id="editQuantity">' + quantityOptions() + '</select><button class="primary-btn" type="submit">' + icon("check") + 'Save changes</button></form></dialog>';
     $("#quantity")?.addEventListener("change", () => $("#bookingTotal").textContent = money(Number($("#quantity").value) * event.price));
-    $("#bookingForm")?.addEventListener("submit", (e) => {
+    $("#bookingForm")?.addEventListener("submit", async (e) => {
         e.preventDefault();
         if (!active) { location.href = profileLink(); return; }
         const quantity = Number($("#quantity").value);
         if (!Number.isInteger(quantity) || quantity < 1 || quantity > 5) { toast("Choose 1 to 5 tickets."); return; }
-        const existing = bookings.find((b) => b.concertId === event.id);
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(API_URL, "create_booking", { concertId: event.id, quantity });
+                applyServerState(data);
+                shell(); renderBookings(); toast("Tickets reserved.");
+            } catch (error) {
+                toast(error.message);
+            }
+            return;
+        }
+        const existing = bookings.find((b) => b.concertId === event.id && b.profileId === profile.id);
         if (existing && existing.quantity + quantity > 5) { toast("You can reserve up to 5 tickets per event. Edit your existing booking below."); return; }
         const next = existing ? bookings.map((b) => b.id === existing.id ? { ...b, quantity: b.quantity + quantity } : b) :
-            [...bookings, { id: id("booking"), concertId: event.id, quantity, createdAt: new Date().toISOString() }];
+            [...bookings, { id: id("booking"), profileId: profile.id, concertId: event.id, quantity, createdAt: new Date().toISOString() }];
         if (!save(KEYS.bookings, next)) return;
         bookings = next; renderBookings(); toast(existing ? "Booking updated." : "Tickets reserved.");
     });
     $("#bookingRows").addEventListener("click", (e) => {
         const button = e.target.closest("[data-booking-id]");
         if (!button || !active) return;
-        const booking = bookings.find((b) => b.id === button.dataset.bookingId);
+        const booking = bookings.find((b) => b.id === button.dataset.bookingId && b.profileId === profile.id);
         if (!booking) return;
         if (button.dataset.action === "edit") {
             $("#editBookingId").value = booking.id; $("#editQuantity").value = booking.quantity; $("#editBookingDialog").showModal();
         } else if (confirm("Cancel this booking?")) {
+            if (serverAvailable) {
+                requestJson(API_URL, "delete_booking", { bookingId: booking.id })
+                    .then((data) => { applyServerState(data); shell(); renderBookings(); toast("Booking cancelled."); })
+                    .catch((error) => toast(error.message));
+                return;
+            }
             const next = bookings.filter((b) => b.id !== booking.id);
             if (save(KEYS.bookings, next)) { bookings = next; renderBookings(); toast("Booking cancelled."); }
         }
     });
     $("#cancelEditBtn").addEventListener("click", () => $("#editBookingDialog").close());
-    $("#editBookingForm").addEventListener("submit", (e) => {
+    $("#editBookingForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         const quantity = Number($("#editQuantity").value);
         if (!active || !Number.isInteger(quantity) || quantity < 1 || quantity > 5) { toast("Choose 1 to 5 tickets."); return; }
-        const next = bookings.map((b) => b.id === $("#editBookingId").value ? { ...b, quantity } : b);
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(API_URL, "update_booking", { bookingId: $("#editBookingId").value, quantity });
+                applyServerState(data);
+                shell(); renderBookings(); $("#editBookingDialog").close(); toast("Booking updated.");
+            } catch (error) {
+                toast(error.message);
+            }
+            return;
+        }
+        const next = bookings.map((b) => b.id === $("#editBookingId").value && b.profileId === profile.id ? { ...b, quantity } : b);
         if (save(KEYS.bookings, next)) { bookings = next; renderBookings(); $("#editBookingDialog").close(); toast("Booking updated."); }
     });
     renderBookings();
@@ -255,7 +411,8 @@ function renderBookings() {
         $("#bookingRows").innerHTML = '<div class="empty-state"><h3>Your tickets, all in one place.</h3><p>Continue with your profile to view your bookings.</p><a class="ticket-btn" href="' + profileLink() + '">Go to profile</a></div>';
         return;
     }
-    $("#bookingRows").innerHTML = bookings.length ? bookings.map((booking) => {
+    const visibleBookings = currentBookings();
+    $("#bookingRows").innerHTML = visibleBookings.length ? visibleBookings.map((booking) => {
         const event = events.find((item) => item.id === booking.concertId);
         return '<article class="booking-row">' + (event ? dateBadge(event) : "") + '<div class="event-main"><h3>' + html(event?.name || "Unavailable event") + '</h3><p>' + html(event?.venue || "This event has been removed.") + '</p><p>' + booking.quantity + (booking.quantity === 1 ? " ticket" : " tickets") + (event ? " / " + money(booking.quantity * event.price) : "") + '</p></div><div class="row-actions">' +
             (event ? '<button class="icon-btn" data-action="edit" data-booking-id="' + html(booking.id) + '" aria-label="Edit booking" title="Edit booking">' + icon("pencil") + '</button>' : "") +
@@ -265,11 +422,15 @@ function renderBookings() {
 }
 function signoutPage() {
     $("#app").innerHTML = '<section class="signout-page"><span class="signout-icon">' + icon("log-out") + '</span><h1>' + (active ? "Ready to sign out?" : "You are signed out.") + '</h1><p>Your saved profile and bookings will stay in this browser.</p>' +
-        (active ? '<button class="primary-btn" id="signoutBtn">' + icon("log-out") + 'Sign out</button><a class="text-link" href="ticket.html">Back to my tickets</a>' : '<a class="primary-btn" href="signin.html">Continue to profile</a><a class="text-link" href="index.html">Explore events</a>') + '</section>';
-    $("#signoutBtn")?.addEventListener("click", () => {
+        (active ? '<button class="primary-btn" id="signoutBtn">' + icon("log-out") + 'Sign out</button><a class="text-link" href="ticket.html">Back to my tickets</a>' : '<a class="primary-btn" href="signin.html">Sign in again</a><a class="text-link" href="index.html">Explore events</a>') + '</section>';
+    $("#signoutBtn")?.addEventListener("click", async () => {
+        if (serverAvailable) {
+            try { await requestJson(AUTH_URL, "sign_out"); }
+            catch (error) { toast(error.message); return; }
+        }
         try { sessionStorage.removeItem(KEYS.session); }
         catch { toast("Unable to sign out. Please try again."); return; }
-        active = false; shell(); signoutPage(); refreshIcons();
+        profile = null; active = false; shell(); signoutPage(); refreshIcons();
     });
 }
 // Demo-only credentials. A browser-side check is not a security boundary.
@@ -287,8 +448,20 @@ function adminLoginPage() {
         '<label for="adminPassword">Password</label><input id="adminPassword" name="password" type="password" autocomplete="current-password" maxlength="100" required>' +
         '<p id="adminLoginError" class="login-error" role="alert"></p>' +
         '<button class="primary-btn" type="submit">' + icon("log-in") + 'Sign in</button></form></section>';
-    $("#adminLoginForm").addEventListener("submit", (e) => {
+    $("#adminLoginForm").addEventListener("submit", async (e) => {
         e.preventDefault();
+        if (serverAvailable) {
+            try {
+                await requestJson(AUTH_URL, "admin_sign_in", { username: $("#adminUsername").value.trim(), password: $("#adminPassword").value });
+                sessionStorage.setItem(ADMIN_SESSION_KEY, "admin");
+                adminPage(); refreshIcons(); $("#adminLogoutBtn").focus(); toast("Signed in as admin.");
+            } catch (error) {
+                $("#adminLoginError").textContent = error.message;
+                $("#adminPassword").value = "";
+                $("#adminPassword").focus();
+            }
+            return;
+        }
         if ($("#adminUsername").value.trim() !== "admin" || $("#adminPassword").value !== "admin123") {
             $("#adminLoginError").textContent = "Incorrect username or password.";
             $("#adminPassword").value = "";
@@ -303,7 +476,7 @@ function adminLoginPage() {
 }
 function adminPage() {
     if (!adminSignedIn()) { adminLoginPage(); return; }
-    $("#app").innerHTML = '<div class="page-heading"><p class="eyebrow">SoundWave / Management</p><h1>Events</h1><p class="muted">Local demo editor. Changes apply only to this browser.</p></div><div class="admin-layout">' +
+    $("#app").innerHTML = '<div class="page-heading"><p class="eyebrow">SoundWave / Management</p><h1>Events</h1><p class="muted">' + (serverAvailable ? 'Database editor. Changes are saved to RDS.' : 'Local demo editor. Changes apply only to this browser.') + '</p></div><div class="admin-layout">' +
         '<section><div class="section-title"><h2>Event catalogue</h2><span id="adminCount" class="muted"></span></div><div id="adminEvents"></div></section>' +
         '<section class="editor"><h2 id="editorTitle">Add event</h2><form id="eventForm" class="form-stack"><input id="eventId" type="hidden"><label for="eventName">Artist / event</label><input id="eventName" required maxlength="120">' +
         '<div class="form-pair"><div><label for="eventDate">Date</label><input id="eventDate" type="date" required></div><div><label for="eventTime">Time</label><input id="eventTime" type="time" required></div></div>' +
@@ -311,17 +484,32 @@ function adminPage() {
         '<label for="eventPrice">Price per ticket (USD)</label><input id="eventPrice" type="number" min="0.01" max="100000" step="0.01" required>' +
         '<div class="button-row"><button class="primary-btn" type="submit">' + icon("save") + 'Save event</button><button class="secondary-btn" type="button" id="clearEvent">' + icon("plus") + 'New event</button></div></form></section></div>';
     $(".page-heading").insertAdjacentHTML("beforeend", '<button id="adminLogoutBtn" class="secondary-btn" type="button">' + icon("log-out") + 'Sign out of admin</button>');
-    $("#adminLogoutBtn").addEventListener("click", () => {
+    $("#adminLogoutBtn").addEventListener("click", async () => {
+        if (serverAvailable) {
+            try { await requestJson(AUTH_URL, "admin_sign_out"); }
+            catch (error) { toast(error.message); return; }
+        }
         try { sessionStorage.removeItem(ADMIN_SESSION_KEY); }
         catch { toast("Unable to sign out. Please try again."); return; }
         adminLoginPage(); $("#adminUsername").focus(); toast("Admin signed out.");
     });
     $("#clearEvent").addEventListener("click", clearEditor);
-    $("#eventForm").addEventListener("submit", (e) => {
+    $("#eventForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         if (!adminSignedIn()) { adminLoginPage(); return; }
         const nextEvent = { id: $("#eventId").value || id("event"), name: $("#eventName").value.trim(), date: $("#eventDate").value, time: $("#eventTime").value, venue: $("#eventVenue").value.trim(), city: $("#eventCity").value.trim(), price: Number($("#eventPrice").value) };
         if (!validEvent(nextEvent) || !nextEvent.name || !nextEvent.venue || !nextEvent.city || nextEvent.price > 100000) { toast("Complete all event fields with a valid price."); return; }
+        if (serverAvailable) {
+            const wasEditing = Boolean($("#eventId").value);
+            try {
+                const data = await requestJson(API_URL, "save_event", nextEvent);
+                applyServerState(data);
+                clearEditor(); renderAdminEvents(); toast(wasEditing ? "Event updated." : "Event added.");
+            } catch (error) {
+                toast(error.message);
+            }
+            return;
+        }
         const previous = events.find((event) => event.id === nextEvent.id);
         if (previous && previous.price !== nextEvent.price && bookings.some((b) => b.concertId === previous.id)) {
             toast("This event has bookings. Cancel those bookings before changing its price."); return;
@@ -342,6 +530,12 @@ function adminPage() {
         } else {
             if (bookings.some((b) => b.concertId === event.id)) { toast("This event has bookings. Cancel them in My tickets before deleting the event."); return; }
             if (!confirm("Delete " + event.name + " on " + dateText(event.date) + "?")) return;
+            if (serverAvailable) {
+                requestJson(API_URL, "delete_event", { id: event.id })
+                    .then((data) => { applyServerState(data); if ($("#eventId").value === event.id) clearEditor(); renderAdminEvents(); toast("Event deleted."); })
+                    .catch((error) => toast(error.message));
+                return;
+            }
             const next = events.filter((item) => item.id !== event.id);
             if (save(KEYS.events, next)) { events = next; if ($("#eventId").value === event.id) clearEditor(); renderAdminEvents(); toast("Event deleted."); }
         }
@@ -356,6 +550,10 @@ function renderAdminEvents() {
     ).join("") : '<div class="empty-state">No events. Add your first event using the form.</div>';
     refreshIcons();
 }
-shell();
-({ events: eventsPage, signin: signInPage, account: profilePage, register: profilePage, tickets: ticketsPage, signout: signoutPage, admin: adminPage }[PAGE] || eventsPage)();
-refreshIcons();
+async function init() {
+    await loadServerState();
+    shell();
+    ({ events: eventsPage, signin: signInPage, account: profilePage, register: createAccountPage, tickets: ticketsPage, signout: signoutPage, admin: adminPage }[PAGE] || eventsPage)();
+    refreshIcons();
+}
+init();
