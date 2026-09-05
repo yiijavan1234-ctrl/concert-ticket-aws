@@ -104,6 +104,12 @@ main { max-width: 1440px; padding: 42px 3% 72px; margin: 0 auto; min-height: 65v
 .danger-link { display: inline-flex; gap: 6px; align-items: center; color: var(--red); background: transparent; font-size: 13px; padding: 4px 0; }
 .danger-link:hover { color: #8d2121; }
 .continue-profile { width: 100%; margin-bottom: 24px; }
+.saved-profile { display: flex; align-items: center; gap: 14px; padding: 18px 0; margin-bottom: 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.saved-profile > div { min-width: 0; overflow-wrap: anywhere; }
+.saved-profile p { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+.saved-profile-icon { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; background: var(--lime); color: var(--green); border-radius: 50%; }
+.continue-profile { overflow-wrap: anywhere; min-width: 0; }
+.account-return { margin-top: 20px; }
 .account-photo { align-self: stretch; position: relative; min-height: 560px; overflow: hidden; border-radius: 8px; color: white; background: #932e31; }
 .account-photo img { width: 100%; height: 100%; position: absolute; object-fit: cover; object-position: 54% center; }
 .account-photo > div { position: absolute; bottom: 0; left: 0; right: 0; padding: 27px; background: rgba(0,0,0,.68); }

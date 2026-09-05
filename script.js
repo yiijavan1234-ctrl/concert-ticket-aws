@@ -63,7 +63,7 @@ function dateBadge(event) {
 function eventLink(event) { return ROOT + "ticket.html?event=" + encodeURIComponent(event.id); }
 function profileLink() {
     const eventId = new URLSearchParams(location.search).get("event");
-    return ROOT + "signin.html" + (eventId ? "?event=" + encodeURIComponent(eventId) : "");
+    return ROOT + (active ? "profile.html" : "signin.html") + (eventId ? "?event=" + encodeURIComponent(eventId) : "");
 }
 function shell() {
     $("#siteHeader").innerHTML = '<div class="announcement">Independent concert ticketing demo <span>Prices shown in USD</span></div>' +
@@ -126,19 +126,56 @@ function renderEventLists() {
     if (!filtered.length) $("#concertList").innerHTML = '<div class="empty-state"><h2>No matching events</h2><p>Try another location, date or search.</p></div>';
     refreshIcons();
 }
+function accountRoute(file) {
+    const eventId = new URLSearchParams(location.search).get("event");
+    return file + (eventId ? "?event=" + encodeURIComponent(eventId) : "");
+}
+function signInPage() {
+    $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
+        '<p class="eyebrow">Your SoundWave account</p><h1>Sign in</h1>' +
+        (profile ? '<p class="muted">' + (active ? 'You are signed in.' : 'Continue with the profile saved in this browser.') + '</p>' +
+            '<div class="saved-profile"><span class="saved-profile-icon">' + icon("user-round") + '</span><div><strong>' + html(profile.fullName) + '</strong><p>' + html(profile.email) + '</p></div></div>' +
+            (active ? '<a class="primary-btn continue-profile" href="' + signInDestination() + '">' + icon("arrow-right") + (new URLSearchParams(location.search).get("event") ? 'Continue to tickets' : 'Go to my profile') + '</a>' :
+                '<button class="primary-btn continue-profile" id="continueProfile" type="button">' + icon("log-in") + 'Continue as ' + html(profile.fullName) + '</button>') :
+            '<p class="muted">No profile is saved in this browser yet. Create an account to get started.</p>') +
+        '<p><a class="text-link" href="' + accountRoute("createaccount.html") + '">' + icon("user-plus") + 'Create account</a></p>' +
+        '<div class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a>' +
+        (active ? '<a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a>' : '') + '</div></section>' +
+        '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
+    $("#continueProfile")?.addEventListener("click", () => {
+        const saved = read(KEYS.profile, null);
+        if (!saved || saved.id !== profile.id || saved.fullName !== profile.fullName || saved.email !== profile.email) {
+            toast("Your saved profile changed. Refresh this page before continuing.");
+            return;
+        }
+        if (startSession()) continueAfterSignIn();
+    });
+    refreshIcons();
+}
 function profilePage() {
+    if (PAGE === "register" && profile && !active) { signInPage(); return; }
+    if (PAGE === "account" && !active) {
+        $("#app").innerHTML = '<section class="admin-login"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
+            '<p class="eyebrow">Your SoundWave account</p><h1>Your profile</h1><p class="muted">Sign in to view and manage your saved profile.</p>' +
+            '<a class="primary-btn" href="' + accountRoute("signin.html") + '">' + icon("log-in") + 'Sign in</a>' +
+            '<div class="account-bottom"><a class="text-link" href="' + accountRoute("createaccount.html") + '">' + icon("user-plus") + 'Create account</a></div></section>';
+        refreshIcons();
+        return;
+    }
     const returning = Boolean(profile);
     $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
-        '<p class="eyebrow">Your SoundWave account</p><h1>' + (active ? "Your profile" : returning ? "Welcome back" : "Good nights start here.") + '</h1>' +
+        '<p class="eyebrow">Your SoundWave account</p><h1>' + (active ? "Your profile" : returning ? "Welcome back" : "Create account") + '</h1>' +
         '<p class="muted" id="profileGreeting">' + (returning ? "Your details, ready for your next event." : "Create your profile to save your tickets.") + '</p>' +
-        (!active && returning ? '<button class="primary-btn continue-profile" id="continueProfile" type="button">' + icon("log-in") + 'Continue with saved profile</button>' : "") +
+        (active ? '<p><a class="text-link" href="' + (PAGE === "account" ? 'ticket.html' : accountRoute("profile.html")) + '">' + icon(PAGE === "account" ? "ticket" : "user-round") + (PAGE === "account" ? 'My tickets' : 'Go to my profile') + '</a></p>' : "") +
+        (PAGE === "register" && returning ? '<p class="muted">This browser already has a saved profile. You can update it below.</p>' : "") +
         '<form id="profileForm" class="form-stack"><input id="profileId" type="hidden" value="' + html(profile?.id || "") + '">' +
         '<label for="fullName">Full name</label><input id="fullName" autocomplete="name" maxlength="100" required value="' + html(profile?.fullName || "") + '">' +
         '<label for="email">Email address</label><input id="email" type="email" autocomplete="email" maxlength="150" required value="' + html(profile?.email || "") + '">' +
         '<div class="form-pair"><div><label for="phone">Phone number</label><input id="phone" type="tel" autocomplete="tel" maxlength="30" required value="' + html(profile?.phone || "") + '"></div>' +
         '<div><label for="city">City</label><input id="city" autocomplete="address-level2" maxlength="100" value="' + html(profile?.city || "") + '"></div></div>' +
-        '<button id="saveProfileBtn" class="primary-btn" type="submit">' + icon("check") + (returning ? "Save profile" : "Create profile") + '</button></form>' +
-        '<div id="profileSummary" class="account-bottom">' + (active ? '<a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a>' : "") + (returning ? '<button id="deleteProfileBtn" class="danger-link" type="button">' + icon("trash-2") + 'Delete profile and bookings</button>' : "") + '</div></section>' +
+        '<button id="saveProfileBtn" class="primary-btn" type="submit">' + icon("check") + (returning ? "Save profile" : "Create account") + '</button></form>' +
+        (PAGE === "register" ? '<p class="muted account-return">Already have a saved profile? <a class="text-link" href="' + accountRoute("signin.html") + '">Sign in</a></p>' : "") +
+        '<div id="profileSummary" class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a>' + (active ? '<a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a>' : "") + (returning ? '<button id="deleteProfileBtn" class="danger-link" type="button">' + icon("trash-2") + 'Delete profile and bookings</button>' : "") + '</div></section>' +
         '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
     $("#profileForm").addEventListener("submit", (e) => {
         e.preventDefault();
@@ -147,10 +184,9 @@ function profilePage() {
         if (!save(KEYS.profile, next)) return;
         profile = next;
         if (!startSession()) return;
-        if (new URLSearchParams(location.search).has("event")) return continueToTickets();
+        if (PAGE !== "account" && new URLSearchParams(location.search).has("event")) return continueAfterSignIn();
         shell(); profilePage(); refreshIcons(); toast("Profile saved.");
     });
-    $("#continueProfile")?.addEventListener("click", () => { if (startSession()) continueToTickets(); });
     $("#deleteProfileBtn")?.addEventListener("click", () => {
         if (!confirm("Delete your profile and all bookings saved in this browser?")) return;
         // Write dependent records first so a failed write cannot leave bookings without a profile.
@@ -162,9 +198,12 @@ function profilePage() {
         shell(); profilePage(); refreshIcons(); toast("Profile and bookings deleted.");
     });
 }
-function continueToTickets() {
+function signInDestination() {
     const eventId = new URLSearchParams(location.search).get("event");
-    location.href = "ticket.html" + (eventId ? "?event=" + encodeURIComponent(eventId) : "");
+    return eventId ? "ticket.html?event=" + encodeURIComponent(eventId) : "profile.html";
+}
+function continueAfterSignIn() {
+    location.href = signInDestination();
 }
 function quantityOptions(value = 1) { return [1, 2, 3, 4, 5].map((n) => '<option value="' + n + '"' + (n === value ? " selected" : "") + ">" + n + (n === 1 ? " ticket" : " tickets") + "</option>").join(""); }
 function ticketsPage() {
@@ -250,7 +289,7 @@ function adminLoginPage() {
         '<button class="primary-btn" type="submit">' + icon("log-in") + 'Sign in</button></form></section>';
     $("#adminLoginForm").addEventListener("submit", (e) => {
         e.preventDefault();
-        if ($("#adminUsername").value.trim() !== "admin" || $("#adminPassword").value !== "Concert2026!") {
+        if ($("#adminUsername").value.trim() !== "admin" || $("#adminPassword").value !== "admin123") {
             $("#adminLoginError").textContent = "Incorrect username or password.";
             $("#adminPassword").value = "";
             $("#adminPassword").focus();
@@ -318,5 +357,5 @@ function renderAdminEvents() {
     refreshIcons();
 }
 shell();
-({ events: eventsPage, profile: profilePage, tickets: ticketsPage, signout: signoutPage, admin: adminPage }[PAGE] || eventsPage)();
+({ events: eventsPage, signin: signInPage, account: profilePage, register: profilePage, tickets: ticketsPage, signout: signoutPage, admin: adminPage }[PAGE] || eventsPage)();
 refreshIcons();
