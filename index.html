@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SoundWave Tickets</title>
+    <title>SoundWave Tickets | Concert Marketplace</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,6 +13,11 @@
             <span>SoundWave Tickets</span>
         </a>
 
+        <form class="site-search" role="search">
+            <label class="sr-only" for="concertSearch">Search events</label>
+            <input type="search" id="concertSearch" placeholder="Search artist, event, or venue">
+        </form>
+
         <div class="nav-actions">
             <a href="#concerts">Concerts</a>
             <a href="#profile">Profile</a>
@@ -21,28 +26,29 @@
     </nav>
 
     <main>
-        <section class="hero" aria-labelledby="page-title">
-            <div>
-                <p class="eyebrow">Static concert ticketing demo</p>
-                <h1 id="page-title">Book shows and manage your account in one page.</h1>
-                <p class="hero-copy">Everything works in the browser, so this can run directly from GitHub Pages, AWS S3, or AWS Amplify without a backend server.</p>
-            </div>
-            <div class="hero-panel" aria-label="Featured event artwork">
-                <div class="stage-lights" aria-hidden="true">
-                    <span></span>
-                    <span></span>
-                    <span></span>
+        <section class="event-header" aria-labelledby="page-title">
+            <div class="artist-image" aria-hidden="true"></div>
+            <div class="artist-copy">
+                <p class="breadcrumb">Concert Tickets / R&amp;B / Pop</p>
+                <h1 id="page-title">The Weeknd Tickets</h1>
+                <p class="event-meta">Find seats for upcoming Asia tour dates. Prices may vary by event and ticket quantity.</p>
+                <div class="quick-stats" aria-label="Event summary">
+                    <span><strong>4</strong> events</span>
+                    <span><strong>USD</strong> pricing</span>
+                    <span id="profileGreeting">Create your profile to start booking.</span>
                 </div>
-                <p>Live seats available</p>
-                <strong id="profileGreeting">Create your profile to start booking.</strong>
             </div>
+            <aside class="guarantee-card">
+                <strong>Ticket guarantee</strong>
+                <span>Saved bookings stay on this device for your assignment demo.</span>
+            </aside>
         </section>
 
-        <section class="dashboard-grid">
+        <section class="market-layout">
             <article class="panel profile-panel" id="profile">
                 <div class="section-heading">
                     <p class="eyebrow">Account</p>
-                    <h2>Profile</h2>
+                    <h2>Profile details</h2>
                 </div>
 
                 <form id="profileForm" class="form-stack">
@@ -69,10 +75,17 @@
                 <div id="profileSummary" class="summary-box" aria-live="polite"></div>
             </article>
 
-            <section class="concerts" id="concerts" aria-labelledby="concerts-title">
-                <div class="section-heading">
-                    <p class="eyebrow">Events</p>
-                    <h2 id="concerts-title">Concerts</h2>
+            <section class="concerts panel" id="concerts" aria-labelledby="concerts-title">
+                <div class="list-header">
+                    <div class="section-heading">
+                        <p class="eyebrow">Events</p>
+                        <h2 id="concerts-title">Upcoming tickets</h2>
+                    </div>
+                    <div class="filter-strip" aria-label="Ticket filters">
+                        <span>All dates</span>
+                        <span>Any quantity</span>
+                        <span>Lowest price first</span>
+                    </div>
                 </div>
                 <div class="product-grid" id="concertList"></div>
             </section>
