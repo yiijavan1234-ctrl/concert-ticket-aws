@@ -49,7 +49,7 @@ accounts = accounts.filter(validProfile).filter((account, index, list) => list.f
 // Preserve the one-account version of this demo when it upgrades to multiple local accounts.
 if (profile && !accounts.some((account) => account.id === profile.id)) accounts.unshift(profile);
 try { localStorage.setItem(KEYS.accounts, JSON.stringify(accounts)); } catch { /* The normal save path reports storage errors. */ }
-if (profile) profile = accounts.find((account) => account.id === profile.id) || null;
+if (profile) profile = publicProfile(accounts.find((account) => account.id === profile.id));
 let bookings = read(KEYS.bookings, []);
 if (!Array.isArray(bookings)) bookings = [];
 bookings = bookings.map((booking) => ({ ...booking, profileId: booking.profileId || profile?.id || "" }))
@@ -61,6 +61,14 @@ let serverAvailable = false;
 function startSession() {
     try { if (profile?.id) sessionStorage.setItem(KEYS.session, profile.id); active = Boolean(profile); return true; }
     catch { toast("Please allow browser storage to continue."); return false; }
+}
+function clearLoginState() {
+    profile = null;
+    active = false;
+    try {
+        sessionStorage.removeItem(KEYS.session);
+        localStorage.removeItem(KEYS.profile);
+    } catch { /* Login is already cleared in memory. */ }
 }
 async function requestJson(url, action, payload = {}) {
     const response = await fetch(url + "?action=" + encodeURIComponent(action), {
@@ -94,7 +102,10 @@ function applyServerState(data) {
     active = Boolean(profile);
     try {
         if (profile) sessionStorage.setItem(KEYS.session, profile.id);
-        else sessionStorage.removeItem(KEYS.session);
+        else {
+            sessionStorage.removeItem(KEYS.session);
+            localStorage.removeItem(KEYS.profile);
+        }
         if (data.admin) sessionStorage.setItem(ADMIN_SESSION_KEY, "admin");
         else sessionStorage.removeItem(ADMIN_SESSION_KEY);
     } catch { /* Server session is still the source of truth. */ }
@@ -109,6 +120,11 @@ function currentBookings() {
 }
 function firstName() {
     return (profile?.fullName || "Account").trim().split(/\s+/)[0] || "Account";
+}
+function publicProfile(account) {
+    if (!account) return null;
+    const { password, ...safeProfile } = account;
+    return safeProfile;
 }
 function orderNo() {
     return "CT" + new Date().toISOString().slice(2, 10).replaceAll("-", "") + Math.floor(1000 + Math.random() * 9000);
@@ -138,17 +154,7 @@ function showBookingConfirmation(booking, event) {
 async function activateAccount(accountId) {
     const selected = accounts.find((account) => account.id === accountId);
     if (!selected) { toast("That account is no longer available. Refresh this page and try again."); return; }
-    if (serverAvailable) {
-        try {
-            const data = await requestJson(AUTH_URL, "sign_in", { profileId: accountId });
-            applyServerState(data);
-            continueAfterSignIn();
-        } catch (error) {
-            toast(error.message);
-        }
-        return;
-    }
-    profile = selected;
+    profile = publicProfile(selected);
     if (!save(KEYS.profile, profile)) return;
     if (startSession()) continueAfterSignIn();
 }
@@ -275,7 +281,7 @@ function signInPage() {
             $("#loginPassword").focus();
             return;
         }
-        profile = account;
+        profile = publicProfile(account);
         if (!save(KEYS.profile, profile)) return;
         if (startSession()) location.replace(signInDestination());
     });
@@ -303,7 +309,7 @@ function createAccountPage() {
         if (serverAvailable) {
             try {
                 const data = await requestJson(AUTH_URL, "create_account", next);
-                applyServerState({ ...data, profile, bookings });
+                applyServerState(data);
                 continueToSignIn();
             } catch (error) {
                 $("#createAccountError").textContent = error.message.includes("email") ? "This email address is already in use." : error.message;
@@ -317,6 +323,7 @@ function createAccountPage() {
         const nextAccounts = [...accounts, next];
         if (!save(KEYS.accounts, nextAccounts)) return;
         accounts = nextAccounts;
+        clearLoginState();
         continueToSignIn();
     });
     refreshIcons();
@@ -509,7 +516,7 @@ function ticketsPage() {
 }
 function renderBookings() {
     if (!active) {
-        $("#bookingRows").innerHTML = '<div class="empty-state"><h3>Your tickets, all in one place.</h3><p>Continue with your profile to view your bookings.</p><a class="ticket-btn" href="' + profileLink() + '">Go to profile</a></div>';
+        $("#bookingRows").innerHTML = '<div class="empty-state"><h3>Your tickets, all in one place.</h3><p>Sign in to view your bookings.</p><a class="ticket-btn" href="' + profileLink() + '">Sign In / Register</a></div>';
         return;
     }
     const visibleBookings = currentBookings();
@@ -522,7 +529,7 @@ function renderBookings() {
     refreshIcons();
 }
 function signoutPage() {
-    $("#app").innerHTML = '<section class="signout-page"><span class="signout-icon">' + icon("log-out") + '</span><h1>' + (active ? "Ready to sign out?" : "You are signed out.") + '</h1><p>Your saved profile and bookings will stay in this browser.</p>' +
+    $("#app").innerHTML = '<section class="signout-page"><span class="signout-icon">' + icon("log-out") + '</span><h1>' + (active ? "Ready to sign out?" : "You are signed out.") + '</h1><p>Your profile and bookings stay saved for your next sign in.</p>' +
         (active ? '<button class="primary-btn" id="signoutBtn">' + icon("log-out") + 'Sign out</button><a class="text-link" href="ticket.html">Back to my tickets</a>' : '<a class="primary-btn" href="signin.html">Sign in again</a><a class="text-link" href="index.html">Explore events</a>') + '</section>';
     $("#signoutBtn")?.addEventListener("click", async () => {
         if (serverAvailable) {
@@ -531,7 +538,7 @@ function signoutPage() {
         }
         try { sessionStorage.removeItem(KEYS.session); }
         catch { toast("Unable to sign out. Please try again."); return; }
-        profile = null; active = false; shell(); signoutPage(); refreshIcons();
+        clearLoginState(); shell(); signoutPage(); refreshIcons();
     });
 }
 // Demo-only credentials. A browser-side check is not a security boundary.

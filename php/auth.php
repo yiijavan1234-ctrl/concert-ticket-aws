@@ -56,7 +56,8 @@ try {
             ':city' => $city,
         ]);
 
-        app_json(['ok' => true, 'accounts' => [], 'message' => 'Account created.']);
+        unset($_SESSION['profile_id']);
+        app_json(['ok' => true, 'profile' => null, 'accounts' => [], 'bookings' => [], 'message' => 'Account created.']);
     }
 
     if ($action === 'sign_in') {
