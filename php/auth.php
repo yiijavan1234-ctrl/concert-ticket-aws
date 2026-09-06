@@ -56,7 +56,7 @@ try {
             ':city' => $city,
         ]);
 
-        unset($_SESSION['profile_id']);
+        unset($_SESSION['profile_id'], $_SESSION['admin_signed_in']);
         app_json(['ok' => true, 'profile' => null, 'accounts' => [], 'bookings' => [], 'message' => 'Account created.']);
     }
 
@@ -71,6 +71,7 @@ try {
         }
 
         $_SESSION['profile_id'] = $row['id'];
+        unset($_SESSION['admin_signed_in']);
         $profile = app_current_profile($pdo);
         app_json([
             'ok' => true,
@@ -93,7 +94,8 @@ try {
         }
 
         $_SESSION['admin_signed_in'] = true;
-        app_json(['ok' => true, 'admin' => true]);
+        unset($_SESSION['profile_id']);
+        app_json(['ok' => true, 'admin' => true, 'profile' => null, 'bookings' => []]);
     }
 
     if ($action === 'admin_sign_out') {

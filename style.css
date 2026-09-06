@@ -116,10 +116,6 @@ main { max-width: 1440px; padding: 42px 3% 72px; margin: 0 auto; min-height: 65v
 .profile-photo, .confirmed-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; background: var(--lime); color: var(--green); }
 .profile-photo { width: 58px; height: 58px; }
 .profile-photo svg { width: 28px; height: 28px; }
-.password-panel { margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-.password-panel summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
-.password-panel summary::marker { content: ""; }
-.password-panel .form-stack { margin-top: 14px; }
 .continue-profile { width: 100%; margin-bottom: 24px; }
 .account-list { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
 .saved-profile { display: flex; align-items: center; width: 100%; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: transparent; text-align: left; }

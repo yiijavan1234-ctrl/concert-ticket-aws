@@ -24,7 +24,11 @@ function require_admin(): void
 
 function app_state(PDO $pdo, ?array $profile = null): array
 {
-    $profile = $profile ?? app_current_profile($pdo);
+    if (!empty($_SESSION['admin_signed_in'])) {
+        $profile = null;
+    } else {
+        $profile = $profile ?? app_current_profile($pdo);
+    }
     return [
         'ok' => true,
         'events' => app_events($pdo),
