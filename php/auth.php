@@ -15,7 +15,7 @@ try {
         app_json([
             'ok' => true,
             'profile' => $profile,
-            'accounts' => app_profiles($pdo),
+            'accounts' => [],
             'bookings' => app_bookings($pdo, $profile['id'] ?? null),
             'admin' => !empty($_SESSION['admin_signed_in']),
         ]);
@@ -28,11 +28,12 @@ try {
     if ($action === 'create_account') {
         $fullName = app_text($input, 'fullName', 120);
         $email = strtolower(app_text($input, 'email', 180));
+        $password = (string)($input['password'] ?? '');
         $phone = app_text($input, 'phone', 40);
         $city = app_text($input, 'city', 120);
 
-        if ($fullName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $phone === '') {
-            app_error('Enter a name, valid email address and phone number.');
+        if ($fullName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || $phone === '' || strlen($password) < 6) {
+            app_error('Enter your details and a password with at least 6 characters.');
         }
 
         $exists = $pdo->prepare('SELECT COUNT(*) FROM profiles WHERE email = :email');
@@ -43,34 +44,37 @@ try {
 
         $profileId = app_id('profile');
         $stmt = $pdo->prepare('
-            INSERT INTO profiles (id, full_name, email, phone, city)
-            VALUES (:id, :full_name, :email, :phone, :city)
+            INSERT INTO profiles (id, full_name, email, password_hash, phone, city)
+            VALUES (:id, :full_name, :email, :password_hash, :phone, :city)
         ');
         $stmt->execute([
             ':id' => $profileId,
             ':full_name' => $fullName,
             ':email' => $email,
+            ':password_hash' => password_hash($password, PASSWORD_DEFAULT),
             ':phone' => $phone,
             ':city' => $city,
         ]);
 
-        app_json(['ok' => true, 'accounts' => app_profiles($pdo), 'message' => 'Account created.']);
+        app_json(['ok' => true, 'accounts' => [], 'message' => 'Account created.']);
     }
 
     if ($action === 'sign_in') {
-        $profileId = app_text($input, 'profileId', 80);
-        $stmt = $pdo->prepare('SELECT id FROM profiles WHERE id = :id');
-        $stmt->execute([':id' => $profileId]);
-        if (!$stmt->fetch()) {
-            app_error('Account not found.', 404);
+        $email = strtolower(app_text($input, 'email', 180));
+        $password = (string)($input['password'] ?? '');
+        $stmt = $pdo->prepare('SELECT id, password_hash FROM profiles WHERE email = :email');
+        $stmt->execute([':email' => $email]);
+        $row = $stmt->fetch();
+        if (!$row || !$row['password_hash'] || !password_verify($password, $row['password_hash'])) {
+            app_error('Email or password is incorrect.', 401);
         }
 
-        $_SESSION['profile_id'] = $profileId;
+        $_SESSION['profile_id'] = $row['id'];
         $profile = app_current_profile($pdo);
         app_json([
             'ok' => true,
             'profile' => $profile,
-            'accounts' => app_profiles($pdo),
+            'accounts' => [],
             'bookings' => app_bookings($pdo, $profile['id'] ?? null),
         ]);
     }

@@ -5,10 +5,10 @@ declare(strict_types=1);
  * Replace these values with your AWS RDS MySQL details.
  * Do not use your AWS account password here. Use the RDS database user/password.
  */
-const DB_HOST = 'YOUR_RDS_ENDPOINT_HERE';
+const DB_HOST = 'concert-db.cke7iknfoxqm.us-east-1.rds.amazonaws.com';
 const DB_NAME = 'concert_ticketing';
 const DB_USER = 'admin';
-const DB_PASS = 'CHANGE_THIS_PASSWORD';
+const DB_PASS = 'admin123';
 
 const ADMIN_USERNAME = 'admin';
 const ADMIN_PASSWORD = 'admin123';

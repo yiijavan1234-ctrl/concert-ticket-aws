@@ -28,7 +28,7 @@ function app_state(PDO $pdo, ?array $profile = null): array
     return [
         'ok' => true,
         'events' => app_events($pdo),
-        'accounts' => app_profiles($pdo),
+        'accounts' => [],
         'profile' => $profile,
         'bookings' => app_bookings($pdo, $profile['id'] ?? null),
         'admin' => !empty($_SESSION['admin_signed_in']),
@@ -117,13 +117,16 @@ try {
             $stmt->execute([':quantity' => $nextQuantity, ':id' => $booking['id'], ':profile_id' => $profile['id']]);
         } else {
             $stmt = $pdo->prepare('
-                INSERT INTO bookings (id, profile_id, concert_id, quantity)
-                VALUES (:id, :profile_id, :concert_id, :quantity)
+                INSERT INTO bookings (id, profile_id, concert_id, order_no, buyer_name, buyer_email, quantity)
+                VALUES (:id, :profile_id, :concert_id, :order_no, :buyer_name, :buyer_email, :quantity)
             ');
             $stmt->execute([
                 ':id' => app_id('booking'),
                 ':profile_id' => $profile['id'],
                 ':concert_id' => $concertId,
+                ':order_no' => app_order_no(),
+                ':buyer_name' => $profile['fullName'],
+                ':buyer_email' => $profile['email'],
                 ':quantity' => $quantity,
             ]);
         }
@@ -141,6 +144,26 @@ try {
 
         $stmt = $pdo->prepare('UPDATE bookings SET quantity = :quantity WHERE id = :id AND profile_id = :profile_id');
         $stmt->execute([':quantity' => $quantity, ':id' => $bookingId, ':profile_id' => $profile['id']]);
+        app_json(app_state($pdo, $profile));
+    }
+
+    if ($action === 'change_password') {
+        $profile = require_profile($pdo);
+        $currentPassword = (string)($input['currentPassword'] ?? '');
+        $newPassword = (string)($input['newPassword'] ?? '');
+        if (strlen($newPassword) < 6) {
+            app_error('Use a password with at least 6 characters.');
+        }
+
+        $stmt = $pdo->prepare('SELECT password_hash FROM profiles WHERE id = :id');
+        $stmt->execute([':id' => $profile['id']]);
+        $row = $stmt->fetch();
+        if (!$row || !$row['password_hash'] || !password_verify($currentPassword, $row['password_hash'])) {
+            app_error('Current password is incorrect.');
+        }
+
+        $update = $pdo->prepare('UPDATE profiles SET password_hash = :password_hash WHERE id = :id');
+        $update->execute([':password_hash' => password_hash($newPassword, PASSWORD_DEFAULT), ':id' => $profile['id']]);
         app_json(app_state($pdo, $profile));
     }
 

@@ -101,6 +101,7 @@ function app_migrate(PDO $pdo): void
             id VARCHAR(80) PRIMARY KEY,
             full_name VARCHAR(120) NOT NULL,
             email VARCHAR(180) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NULL,
             phone VARCHAR(40) NOT NULL,
             city VARCHAR(120) NOT NULL DEFAULT '',
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -127,6 +128,9 @@ function app_migrate(PDO $pdo): void
             id VARCHAR(80) PRIMARY KEY,
             profile_id VARCHAR(80) NOT NULL,
             concert_id VARCHAR(100) NOT NULL,
+            order_no VARCHAR(30) NOT NULL UNIQUE,
+            buyer_name VARCHAR(120) NOT NULL,
+            buyer_email VARCHAR(180) NOT NULL,
             quantity INT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -135,6 +139,15 @@ function app_migrate(PDO $pdo): void
             CONSTRAINT fk_bookings_event FOREIGN KEY (concert_id) REFERENCES events(id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
+
+    app_add_column($pdo, 'profiles', 'password_hash', 'VARCHAR(255) NULL AFTER email');
+    app_add_column($pdo, 'bookings', 'order_no', 'VARCHAR(30) NULL AFTER concert_id');
+    app_add_column($pdo, 'bookings', 'buyer_name', 'VARCHAR(120) NULL AFTER order_no');
+    app_add_column($pdo, 'bookings', 'buyer_email', 'VARCHAR(180) NULL AFTER buyer_name');
+    app_backfill_booking_columns($pdo);
+    app_make_not_null($pdo, 'bookings', 'order_no', 'VARCHAR(30)');
+    app_make_not_null($pdo, 'bookings', 'buyer_name', 'VARCHAR(120)');
+    app_make_not_null($pdo, 'bookings', 'buyer_email', 'VARCHAR(180)');
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM events')->fetchColumn();
     if ($count === 0) {
@@ -156,6 +169,61 @@ function app_migrate(PDO $pdo): void
     }
 
     $done = true;
+}
+
+function app_column_exists(PDO $pdo, string $table, string $column): bool
+{
+    $config = app_db_config();
+    $stmt = $pdo->prepare('
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = :schema AND TABLE_NAME = :table AND COLUMN_NAME = :column
+    ');
+    $stmt->execute([':schema' => $config['name'], ':table' => $table, ':column' => $column]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+function app_add_column(PDO $pdo, string $table, string $column, string $definition): void
+{
+    if (app_column_exists($pdo, $table, $column)) {
+        return;
+    }
+
+    $pdo->exec("ALTER TABLE `$table` ADD COLUMN `$column` $definition");
+}
+
+function app_make_not_null(PDO $pdo, string $table, string $column, string $type): void
+{
+    $pdo->exec("ALTER TABLE `$table` MODIFY COLUMN `$column` $type NOT NULL");
+}
+
+function app_order_no(): string
+{
+    return 'CT' . date('ymd') . mt_rand(1000, 9999);
+}
+
+function app_backfill_booking_columns(PDO $pdo): void
+{
+    $rows = $pdo->query('
+        SELECT b.id, b.order_no, b.buyer_name, b.buyer_email, p.full_name, p.email
+        FROM bookings b
+        JOIN profiles p ON p.id = b.profile_id
+        WHERE b.order_no IS NULL OR b.order_no = "" OR b.buyer_name IS NULL OR b.buyer_name = "" OR b.buyer_email IS NULL OR b.buyer_email = ""
+    ')->fetchAll();
+
+    $stmt = $pdo->prepare('
+        UPDATE bookings
+        SET order_no = :order_no, buyer_name = :buyer_name, buyer_email = :buyer_email
+        WHERE id = :id
+    ');
+    foreach ($rows as $row) {
+        $stmt->execute([
+            ':order_no' => $row['order_no'] ?: app_order_no(),
+            ':buyer_name' => $row['buyer_name'] ?: $row['full_name'],
+            ':buyer_email' => $row['buyer_email'] ?: $row['email'],
+            ':id' => $row['id'],
+        ]);
+    }
 }
 
 function app_profile_row(?array $row): ?array
@@ -192,6 +260,9 @@ function app_booking_row(array $row): array
         'id' => $row['id'],
         'profileId' => $row['profile_id'],
         'concertId' => $row['concert_id'],
+        'orderNo' => $row['order_no'],
+        'buyerName' => $row['buyer_name'],
+        'buyerEmail' => $row['buyer_email'],
         'quantity' => (int)$row['quantity'],
         'createdAt' => $row['created_at'],
     ];
@@ -232,7 +303,7 @@ function app_bookings(PDO $pdo, ?string $profileId): array
         return [];
     }
 
-    $stmt = $pdo->prepare('SELECT id, profile_id, concert_id, quantity, created_at FROM bookings WHERE profile_id = :profile_id ORDER BY created_at DESC');
+    $stmt = $pdo->prepare('SELECT id, profile_id, concert_id, order_no, buyer_name, buyer_email, quantity, created_at FROM bookings WHERE profile_id = :profile_id ORDER BY created_at DESC');
     $stmt->execute([':profile_id' => $profileId]);
     return array_map('app_booking_row', $stmt->fetchAll());
 }

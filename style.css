@@ -33,6 +33,13 @@ svg, [data-lucide] { width: 18px; height: 18px; flex-shrink: 0; vertical-align: 
 .nav-actions { display: flex; align-items: center; gap: 27px; margin-left: auto; font-size: 14px; font-weight: 600; }
 .nav-actions a { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; min-height: 40px; }
 .nav-actions a:hover, .nav-actions [aria-current] { color: var(--green); }
+.account-menu { position: relative; }
+.account-menu summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; min-height: 40px; cursor: pointer; }
+.account-menu summary::-webkit-details-marker { display: none; }
+.account-menu[open] summary, .account-menu summary:hover { color: var(--green); }
+.account-dropdown { position: absolute; right: 0; top: calc(100% + 10px); width: 190px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: white; box-shadow: 0 16px 38px rgba(32,37,29,.13); z-index: 30; }
+.account-dropdown a { display: flex; width: 100%; min-height: 38px; padding: 8px 10px; border-radius: 5px; font-size: 13px; font-weight: 500; }
+.account-dropdown a:hover { background: var(--surface); color: var(--green); text-decoration: none; }
 .signout-link span { display: none; }
 main { max-width: 1440px; padding: 42px 3% 72px; margin: 0 auto; min-height: 65vh; }
 .market-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 360px); gap: 44px; }
@@ -103,6 +110,16 @@ main { max-width: 1440px; padding: 42px 3% 72px; margin: 0 auto; min-height: 65v
 .account-bottom { margin-top: 24px; border-top: 1px solid var(--line); padding-top: 16px; display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
 .danger-link { display: inline-flex; gap: 6px; align-items: center; color: var(--red); background: transparent; font-size: 13px; padding: 4px 0; }
 .danger-link:hover { color: #8d2121; }
+.profile-card { display: flex; align-items: center; gap: 14px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; margin: 18px 0 20px; background: var(--surface); }
+.profile-card strong, .profile-card small { display: block; overflow-wrap: anywhere; }
+.profile-card small { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.profile-photo, .confirmed-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; background: var(--lime); color: var(--green); }
+.profile-photo { width: 58px; height: 58px; }
+.profile-photo svg { width: 28px; height: 28px; }
+.password-panel { margin-top: 16px; border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+.password-panel summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.password-panel summary::marker { content: ""; }
+.password-panel .form-stack { margin-top: 14px; }
 .continue-profile { width: 100%; margin-bottom: 24px; }
 .account-list { display: flex; flex-direction: column; gap: 10px; margin: 20px 0; }
 .saved-profile { display: flex; align-items: center; width: 100%; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: transparent; text-align: left; }
@@ -130,6 +147,14 @@ main { max-width: 1440px; padding: 42px 3% 72px; margin: 0 auto; min-height: 65v
 .price-line.total { font-size: 19px; border-top: 1px solid var(--line); padding-top: 16px; }
 .booking-box .primary-btn { width: 100%; margin-top: 12px; }
 .booking-box .fine-print { font-size: 12px; text-align: center; margin: 13px 0 0; }
+.booking-confirmed { display: flex; gap: 18px; max-width: 760px; margin: 24px 0 0; padding: 22px; border: 1px solid #bdd29a; border-radius: 8px; background: #fbfdf4; }
+.confirmed-icon { width: 54px; height: 54px; }
+.confirmed-icon svg { width: 28px; height: 28px; }
+.booking-confirmed h2 { font-size: 24px; margin-bottom: 16px; }
+.order-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px 24px; margin: 0; }
+.order-meta div { min-width: 0; }
+.order-meta dt { color: var(--muted); font-size: 12px; font-weight: 600; }
+.order-meta dd { margin: 2px 0 0; font-size: 14px; overflow-wrap: anywhere; }
 .bookings-section { margin-top: 40px; max-width: 940px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 20px; }
 .section-title h2 { margin: 0; }
@@ -179,6 +204,7 @@ noscript { display: block; padding: 30px; }
     .site-search { order: 3; flex-basis: 100%; max-width: none; }
     .nav-actions { gap: 16px; }
     .nav-actions a { font-size: 13px; }
+    .account-dropdown { right: auto; left: 0; }
     main { padding: 28px 5% 48px; }
     .market-layout { grid-template-columns: minmax(0,1fr); }
     .artist-panel { display: grid; grid-template-columns: 1fr 1fr; margin-top: 8px; }
@@ -222,6 +248,8 @@ noscript { display: block; padding: 30px; }
     .artist-info { border-radius: 0 0 8px 8px; }
     .genre-tags { margin-bottom: 14px; }
     .ticket-detail { grid-template-columns: 1fr; }
+    .booking-confirmed { flex-direction: column; }
+    .order-meta { grid-template-columns: 1fr; }
     .booking-row, .admin-event { grid-template-columns: 52px minmax(0,1fr); padding: 14px 10px; gap: 12px; }
     .booking-row .row-actions, .admin-event .row-actions { grid-column: 2; justify-content: flex-end; }
     .account-form h1 { font-size: 32px; }

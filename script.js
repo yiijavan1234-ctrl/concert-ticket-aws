@@ -2,10 +2,13 @@
 
 const PAGE = document.body.dataset.page || "events";
 const ROOT = PAGE === "admin" ? "../" : "";
-const KEYS = { accounts: "soundwave.accounts", profile: "soundwave.profile", bookings: "soundwave.bookings", events: "soundwave.events", session: "soundwave.session" };
+const KEYS = { accounts: "soundwave.accounts", profile: "soundwave.profile", bookings: "soundwave.bookings", events: "soundwave.events", session: "soundwave.session", lastOrder: "soundwave.lastOrder" };
 const API_URL = ROOT + "php/api.php";
 const AUTH_URL = ROOT + "php/auth.php";
 const ARTIST_IMAGE = "https://media.stubhubstatic.com/stubhub-v2-catalog/d_vgg-defaultLogo.jpg/q_auto:good,f_auto,c_fill,g_auto,w_1200,h_736/categories/26202/6579799";
+window.addEventListener("pageshow", (event) => {
+    if (event.persisted) location.reload();
+});
 const defaults = [
     { id: "weeknd-kuala-lumpur-2026-11-04", name: "The Weeknd", date: "2026-11-04", time: "20:30", venue: "Bukit Jalil National Stadium", city: "Kuala Lumpur, Malaysia", price: 149 },
     { id: "weeknd-kuala-lumpur-2026-11-05", name: "The Weeknd", date: "2026-11-05", time: "20:30", venue: "Bukit Jalil National Stadium", city: "Kuala Lumpur, Malaysia", price: 138 },
@@ -104,6 +107,34 @@ async function refreshServerState() {
 function currentBookings() {
     return profile ? bookings.filter((booking) => booking.profileId === profile.id) : [];
 }
+function firstName() {
+    return (profile?.fullName || "Account").trim().split(/\s+/)[0] || "Account";
+}
+function orderNo() {
+    return "CT" + new Date().toISOString().slice(2, 10).replaceAll("-", "") + Math.floor(1000 + Math.random() * 9000);
+}
+function bookingOrderNo(booking) {
+    return booking?.orderNo || booking?.id?.replace(/\W/g, "").slice(-10).toUpperCase() || orderNo();
+}
+function bookingBuyerName(booking) {
+    return booking?.buyerName || profile?.fullName || "";
+}
+function bookingBuyerEmail(booking) {
+    return booking?.buyerEmail || profile?.email || "";
+}
+function showBookingConfirmation(booking, event) {
+    if (!$("#purchaseResult") || !booking || !event) return;
+    save(KEYS.lastOrder, { bookingId: booking.id, concertId: event.id, orderNo: bookingOrderNo(booking) });
+    $("#purchaseResult").innerHTML = '<section class="booking-confirmed">' +
+        '<span class="confirmed-icon">' + icon("circle-check") + '</span><div><p class="eyebrow">Booking Confirmed</p><h2>Your tickets are ready.</h2>' +
+        '<dl class="order-meta"><div><dt>Order No.</dt><dd>' + html(bookingOrderNo(booking)) + '</dd></div>' +
+        '<div><dt>Event</dt><dd>' + html(event.name) + '</dd></div>' +
+        '<div><dt>Date</dt><dd>' + html(dateText(event.date)) + ' / ' + html(timeText(event.time)) + '</dd></div>' +
+        '<div><dt>Tickets</dt><dd>' + booking.quantity + (booking.quantity === 1 ? ' ticket' : ' tickets') + '</dd></div>' +
+        '<div><dt>Account email</dt><dd>' + html(bookingBuyerEmail(booking)) + '</dd></div></dl>' +
+        '<div class="button-row"><a class="primary-btn" href="ticket.html">' + icon("ticket") + 'View My Tickets</a><a class="secondary-btn" href="ticket.html?view=history">' + icon("receipt-text") + 'View Receipt</a></div></div></section>';
+    refreshIcons();
+}
 async function activateAccount(accountId) {
     const selected = accounts.find((account) => account.id === accountId);
     if (!selected) { toast("That account is no longer available. Refresh this page and try again."); return; }
@@ -150,8 +181,11 @@ function shell() {
         '<input id="concertSearch" type="search" placeholder="Search artists, events or venues" name="q" maxlength="150"></form>' +
         '<div class="nav-actions"><a href="' + ROOT + 'index.html"' + (PAGE === "events" ? ' aria-current="page"' : "") + '>Explore</a>' +
         '<a href="' + ROOT + 'ticket.html"' + (PAGE === "tickets" ? ' aria-current="page"' : "") + '>My tickets</a>' +
-        '<a id="accountLink" href="' + profileLink() + '">' + icon("user-round") + '<span>' + (active ? "My profile" : "Sign in") + '</span></a>' +
-        (active ? '<a class="signout-link" href="' + ROOT + 'signout.html" title="Sign out">' + icon("log-out") + '<span>Sign out</span></a>' : "") + '</div></nav>';
+        (active ? '<details class="account-menu"><summary>' + icon("user-round") + '<span>' + html(firstName()) + '</span>' + icon("chevron-down") + '</summary><div class="account-dropdown">' +
+            '<a href="' + ROOT + 'profile.html">' + icon("user-round") + 'My Profile</a>' +
+            '<a href="' + ROOT + 'ticket.html?view=history">' + icon("receipt-text") + 'Order History</a>' +
+            '<a href="' + ROOT + 'signout.html">' + icon("log-out") + 'Sign Out</a></div></details>' :
+            '<a id="accountLink" href="' + profileLink() + '">' + icon("user-round") + '<span>Sign In / Register</span></a>') + '</div></nav>';
     $("#siteFooter").innerHTML = '<a class="brand" href="' + ROOT + 'index.html">sound<span>wave</span>.</a><p>Demo events and prices. No payment is collected.<br>' + (serverAvailable ? 'Profiles and bookings are saved in the database.' : 'Profiles and bookings are saved only in this browser.') + '</p><a href="' + ROOT + 'admin/crud.html">Event management</a>';
     $(".site-search").addEventListener("submit", (e) => {
         e.preventDefault();
@@ -210,15 +244,41 @@ function accountRoute(file) {
 }
 function signInPage() {
     $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
-        '<p class="eyebrow">Your SoundWave account</p><h1>Sign in</h1>' +
-        (accounts.length ? '<p class="muted">Choose a profile saved in this browser.</p><div class="account-list">' + accounts.map((account) =>
-            '<button class="saved-profile" type="button" data-account-id="' + html(account.id) + '"><span class="saved-profile-icon">' + icon("user-round") + '</span><span><strong>' + html(account.fullName) + '</strong><small>' + html(account.email) + '</small></span><span class="account-action">' + icon(active && profile?.id === account.id ? "arrow-right" : "log-in") + (active && profile?.id === account.id ? "Open profile" : "Continue") + '</span></button>').join("") + '</div>' :
-            '<p class="muted">No profile is saved in this browser yet. Create an account to get started.</p>') +
-        '<p><a class="text-link" href="' + accountRoute("createaccount.html") + '">' + icon("user-plus") + 'Create account</a></p>' +
+        '<p class="eyebrow">Your SoundWave account</p><h1>Sign in</h1><p class="muted">Use the same email you used when booking tickets.</p>' +
+        '<form id="signInForm" class="form-stack"><label for="loginEmail">Email address</label><input id="loginEmail" name="email" type="email" autocomplete="email" maxlength="150" required>' +
+        '<label for="loginPassword">Password</label><input id="loginPassword" name="password" type="password" autocomplete="current-password" maxlength="100" required>' +
+        '<p id="signInError" class="login-error" role="alert"></p><button class="primary-btn" type="submit">' + icon("log-in") + 'Sign in</button></form>' +
+        '<p class="muted account-return">New to SoundWave? <a class="text-link" href="' + accountRoute("createaccount.html") + '">Create account</a></p>' +
         '<div class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a>' +
         (active ? '<a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a>' : '') + '</div></section>' +
         '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
-    document.querySelectorAll("[data-account-id]").forEach((button) => button.addEventListener("click", () => activateAccount(button.dataset.accountId)));
+    $("#signInForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = $("#loginEmail").value.trim().toLowerCase();
+        const password = $("#loginPassword").value;
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(AUTH_URL, "sign_in", { email, password });
+                applyServerState(data);
+                location.replace(signInDestination());
+            } catch {
+                $("#signInError").textContent = "Email or password is incorrect.";
+                $("#loginPassword").value = "";
+                $("#loginPassword").focus();
+            }
+            return;
+        }
+        const account = accounts.find((item) => item.email.toLowerCase() === email && item.password === password);
+        if (!account) {
+            $("#signInError").textContent = "Email or password is incorrect.";
+            $("#loginPassword").value = "";
+            $("#loginPassword").focus();
+            return;
+        }
+        profile = account;
+        if (!save(KEYS.profile, profile)) return;
+        if (startSession()) location.replace(signInDestination());
+    });
     refreshIcons();
 }
 function createAccountPage() {
@@ -226,6 +286,7 @@ function createAccountPage() {
         '<p class="eyebrow">Join SoundWave</p><h1>Create account</h1><p class="muted">Enter your details to create your concert profile.</p>' +
         '<form id="createAccountForm" class="form-stack"><label for="fullName">Full name</label><input id="fullName" name="fullName" autocomplete="name" maxlength="100" required>' +
         '<label for="email">Email address</label><input id="email" name="email" type="email" autocomplete="email" maxlength="150" required>' +
+        '<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="6" maxlength="100" required>' +
         '<div class="form-pair"><div><label for="phone">Phone number</label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="30" required></div>' +
         '<div><label for="city">City</label><input id="city" name="city" autocomplete="address-level2" maxlength="100"></div></div>' +
         '<p class="login-error" id="createAccountError" role="alert"></p>' +
@@ -234,9 +295,9 @@ function createAccountPage() {
         '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
     $("#createAccountForm").addEventListener("submit", async (e) => {
         e.preventDefault();
-        const next = { id: id("profile"), fullName: $("#fullName").value.trim(), email: $("#email").value.trim(), phone: $("#phone").value.trim(), city: $("#city").value.trim() };
-        if (!next.fullName || !next.email || !next.phone || !$("#createAccountForm").reportValidity()) {
-            $("#createAccountError").textContent = 'Enter a name, valid email address and phone number.';
+        const next = { id: id("profile"), fullName: $("#fullName").value.trim(), email: $("#email").value.trim(), password: $("#password").value, phone: $("#phone").value.trim(), city: $("#city").value.trim() };
+        if (!next.fullName || !next.email || !next.phone || next.password.length < 6 || !$("#createAccountForm").reportValidity()) {
+            $("#createAccountError").textContent = 'Enter your details and a password with at least 6 characters.';
             return;
         }
         if (serverAvailable) {
@@ -245,12 +306,12 @@ function createAccountPage() {
                 applyServerState({ ...data, profile, bookings });
                 continueToSignIn();
             } catch (error) {
-                $("#createAccountError").textContent = error.message;
+                $("#createAccountError").textContent = error.message.includes("email") ? "This email address is already in use." : error.message;
             }
             return;
         }
         if (accounts.some((account) => account.email.toLowerCase() === next.email.toLowerCase())) {
-            $("#createAccountError").textContent = "An account with this email already exists in this browser. Choose another email or sign in.";
+            $("#createAccountError").textContent = "This email address is already in use.";
             return;
         }
         const nextAccounts = [...accounts, next];
@@ -274,14 +335,18 @@ function profilePage() {
     }
     $("#app").innerHTML = '<div class="account-layout"><section class="account-form"><a class="back-link" href="index.html">' + icon("arrow-left") + 'Back to events</a>' +
         '<p class="eyebrow">Your SoundWave account</p><h1>Your profile</h1>' +
-        '<p class="muted" id="profileGreeting">Your details, ready for your next event.</p>' +
+        '<div class="profile-card"><span class="profile-photo">' + icon("user-round") + '</span><div><p class="eyebrow">Profile Photo</p><strong>' + html(profile?.fullName || "") + '</strong><small>' + html(profile?.email || "") + '</small></div></div>' +
         '<p><a class="text-link" href="ticket.html">' + icon("ticket") + 'My tickets</a></p>' +
         '<form id="profileForm" class="form-stack"><input id="profileId" type="hidden" value="' + html(profile?.id || "") + '">' +
         '<label for="fullName">Full name</label><input id="fullName" autocomplete="name" maxlength="100" required value="' + html(profile?.fullName || "") + '">' +
         '<label for="email">Email address</label><input id="email" type="email" autocomplete="email" maxlength="150" required value="' + html(profile?.email || "") + '">' +
         '<div class="form-pair"><div><label for="phone">Phone number</label><input id="phone" type="tel" autocomplete="tel" maxlength="30" required value="' + html(profile?.phone || "") + '"></div>' +
         '<div><label for="city">City</label><input id="city" autocomplete="address-level2" maxlength="100" value="' + html(profile?.city || "") + '"></div></div>' +
-        '<button id="saveProfileBtn" class="primary-btn" type="submit">' + icon("check") + 'Save profile</button></form>' +
+        '<button id="saveProfileBtn" class="primary-btn" type="submit">' + icon("check") + 'Edit Profile</button></form>' +
+        '<details class="password-panel"><summary>' + icon("key-round") + 'Change Password</summary><form id="passwordForm" class="form-stack">' +
+        '<label for="currentPassword">Current password</label><input id="currentPassword" type="password" autocomplete="current-password" maxlength="100">' +
+        '<label for="newPassword">New password</label><input id="newPassword" type="password" autocomplete="new-password" minlength="6" maxlength="100">' +
+        '<p id="passwordError" class="login-error" role="alert"></p><button class="secondary-btn" type="submit">' + icon("key-round") + 'Change Password</button></form></details>' +
         '<div id="profileSummary" class="account-bottom"><a class="text-link" href="admin/crud.html">' + icon("log-in") + 'Admin sign in</a><a class="text-link" href="signout.html">' + icon("log-out") + 'Sign out</a><button id="deleteProfileBtn" class="danger-link" type="button">' + icon("trash-2") + 'Delete profile and bookings</button></div></section>' +
         '<aside class="account-photo"><img src="' + ARTIST_IMAGE + '" alt="The Weeknd live on stage" width="1200" height="736"><div><p>THE WEEKND</p><h2>Be part of the night.</h2></div></aside></div>';
     $("#profileForm").addEventListener("submit", async (e) => {
@@ -294,17 +359,51 @@ function profilePage() {
                 applyServerState(data);
                 shell(); profilePage(); refreshIcons(); toast("Profile saved.");
             } catch (error) {
-                toast(error.message);
+                toast(error.message.includes("email") ? "This email address is already in use." : error.message);
             }
             return;
         }
-        if (accounts.some((account) => account.id !== next.id && account.email.toLowerCase() === next.email.toLowerCase())) { toast("Another account in this browser already uses that email."); return; }
-        const nextAccounts = accounts.map((account) => account.id === next.id ? next : account);
+        if (accounts.some((account) => account.id !== next.id && account.email.toLowerCase() === next.email.toLowerCase())) { toast("This email address is already in use."); return; }
+        const nextAccounts = accounts.map((account) => account.id === next.id ? { ...account, ...next } : account);
         if (!save(KEYS.accounts, nextAccounts) || !save(KEYS.profile, next)) return;
         accounts = nextAccounts;
         profile = next;
         if (!startSession()) return;
         shell(); profilePage(); refreshIcons(); toast("Profile saved.");
+    });
+    $("#passwordForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const currentPassword = $("#currentPassword").value;
+        const newPassword = $("#newPassword").value;
+        if (newPassword.length < 6) {
+            $("#passwordError").textContent = "Use a password with at least 6 characters.";
+            return;
+        }
+        if (serverAvailable) {
+            try {
+                const data = await requestJson(API_URL, "change_password", { currentPassword, newPassword });
+                applyServerState(data);
+                $("#currentPassword").value = "";
+                $("#newPassword").value = "";
+                $("#passwordError").textContent = "";
+                toast("Password changed.");
+            } catch (error) {
+                $("#passwordError").textContent = error.message;
+            }
+            return;
+        }
+        const account = accounts.find((item) => item.id === profile.id);
+        if (!account || account.password !== currentPassword) {
+            $("#passwordError").textContent = "Current password is incorrect.";
+            return;
+        }
+        const nextAccounts = accounts.map((item) => item.id === profile.id ? { ...item, password: newPassword } : item);
+        if (!save(KEYS.accounts, nextAccounts)) return;
+        accounts = nextAccounts;
+        $("#currentPassword").value = "";
+        $("#newPassword").value = "";
+        $("#passwordError").textContent = "";
+        toast("Password changed.");
     });
     $("#deleteProfileBtn")?.addEventListener("click", async () => {
         if (!confirm("Delete your profile and all bookings saved in this browser?")) return;
@@ -330,7 +429,7 @@ function profilePage() {
 }
 function signInDestination() {
     const eventId = new URLSearchParams(location.search).get("event");
-    return eventId ? "ticket.html?event=" + encodeURIComponent(eventId) : "profile.html";
+    return eventId ? "ticket.html?event=" + encodeURIComponent(eventId) : "index.html";
 }
 function continueAfterSignIn() {
     location.href = signInDestination();
@@ -338,12 +437,13 @@ function continueAfterSignIn() {
 function quantityOptions(value = 1) { return [1, 2, 3, 4, 5].map((n) => '<option value="' + n + '"' + (n === value ? " selected" : "") + ">" + n + (n === 1 ? " ticket" : " tickets") + "</option>").join(""); }
 function ticketsPage() {
     const eventId = new URLSearchParams(location.search).get("event");
+    const view = new URLSearchParams(location.search).get("view");
     const event = events.find((item) => item.id === eventId);
     $("#app").innerHTML = '<a class="back-link" href="index.html">' + icon("arrow-left") + 'All events</a>' +
         (eventId ? (event ? '<section class="ticket-detail"><div><p class="eyebrow">Concert tickets</p><h1>' + html(event.name) + '</h1><p class="detail-date">' + html(dateText(event.date)) + ' / ' + html(timeText(event.time)) + '</p><p>' + html(event.venue) + '<br>' + html(event.city) + '</p><div class="ticket-type">' + icon("ticket") + '<span>Standard admission</span></div></div>' +
-        '<form id="bookingForm" class="booking-box"><h2>Your tickets</h2><label for="quantity">Quantity</label><select id="quantity">' + quantityOptions() + '</select><div class="price-line"><span>Per ticket</span><strong>' + money(event.price) + '</strong></div><div class="price-line total"><span>Total</span><strong id="bookingTotal">' + money(event.price) + '</strong></div><button class="primary-btn" type="submit">' + icon(active ? "ticket" : "log-in") + (active ? "Reserve tickets" : "Continue to profile") + '</button><p class="fine-print">Demo reservation. No payment or ticket delivery.</p></form></section>' :
-        '<div class="empty-state"><h1>Event unavailable</h1><p>This event may have been removed.</p><a class="ticket-btn" href="index.html">Browse events</a></div>') : '<div class="page-heading"><p class="eyebrow">Your next night out</p><h1>My tickets</h1></div>') +
-        '<section class="bookings-section" id="bookings"><div class="section-title"><h2>My bookings</h2><a class="text-link" href="index.html">Explore events ' + icon("arrow-right") + '</a></div><div id="bookingRows"></div></section>' +
+        '<form id="bookingForm" class="booking-box"><h2>Your tickets</h2><label for="quantity">Quantity</label><select id="quantity">' + quantityOptions() + '</select><div class="price-line"><span>Per ticket</span><strong>' + money(event.price) + '</strong></div><div class="price-line total"><span>Total</span><strong id="bookingTotal">' + money(event.price) + '</strong></div><button class="primary-btn" type="submit">' + icon(active ? "ticket" : "log-in") + (active ? "Reserve tickets" : "Sign In / Register") + '</button><p class="fine-print">Demo reservation. No payment or ticket delivery.</p></form></section><div id="purchaseResult"></div>' :
+        '<div class="empty-state"><h1>Event unavailable</h1><p>This event may have been removed.</p><a class="ticket-btn" href="index.html">Browse events</a></div>') : '<div class="page-heading"><p class="eyebrow">Your next night out</p><h1>' + (view === "history" ? "Order History" : "My tickets") + '</h1></div>') +
+        '<section class="bookings-section" id="bookings"><div class="section-title"><h2>' + (view === "history" ? "Receipts" : "My bookings") + '</h2><a class="text-link" href="index.html">Explore events ' + icon("arrow-right") + '</a></div><div id="bookingRows"></div></section>' +
         '<dialog id="editBookingDialog"><form id="editBookingForm" class="form-stack"><div class="section-title"><h2>Edit booking</h2><button class="icon-btn" id="cancelEditBtn" type="button" aria-label="Close" title="Close">' + icon("x") + '</button></div><input id="editBookingId" type="hidden"><label for="editQuantity">Quantity</label><select id="editQuantity">' + quantityOptions() + '</select><button class="primary-btn" type="submit">' + icon("check") + 'Save changes</button></form></dialog>';
     $("#quantity")?.addEventListener("change", () => $("#bookingTotal").textContent = money(Number($("#quantity").value) * event.price));
     $("#bookingForm")?.addEventListener("submit", async (e) => {
@@ -355,7 +455,8 @@ function ticketsPage() {
             try {
                 const data = await requestJson(API_URL, "create_booking", { concertId: event.id, quantity });
                 applyServerState(data);
-                shell(); renderBookings(); toast("Tickets reserved.");
+                const savedBooking = currentBookings().find((booking) => booking.concertId === event.id);
+                shell(); showBookingConfirmation(savedBooking, event); renderBookings(); toast("Tickets reserved.");
             } catch (error) {
                 toast(error.message);
             }
@@ -363,10 +464,10 @@ function ticketsPage() {
         }
         const existing = bookings.find((b) => b.concertId === event.id && b.profileId === profile.id);
         if (existing && existing.quantity + quantity > 5) { toast("You can reserve up to 5 tickets per event. Edit your existing booking below."); return; }
-        const next = existing ? bookings.map((b) => b.id === existing.id ? { ...b, quantity: b.quantity + quantity } : b) :
-            [...bookings, { id: id("booking"), profileId: profile.id, concertId: event.id, quantity, createdAt: new Date().toISOString() }];
+        const newBooking = { id: id("booking"), profileId: profile.id, concertId: event.id, orderNo: orderNo(), buyerName: profile.fullName, buyerEmail: profile.email, quantity, createdAt: new Date().toISOString() };
+        const next = existing ? bookings.map((b) => b.id === existing.id ? { ...b, quantity: b.quantity + quantity } : b) : [...bookings, newBooking];
         if (!save(KEYS.bookings, next)) return;
-        bookings = next; renderBookings(); toast(existing ? "Booking updated." : "Tickets reserved.");
+        bookings = next; showBookingConfirmation(existing ? bookings.find((b) => b.id === existing.id) : newBooking, event); renderBookings(); toast(existing ? "Booking updated." : "Tickets reserved.");
     });
     $("#bookingRows").addEventListener("click", (e) => {
         const button = e.target.closest("[data-booking-id]");
@@ -414,7 +515,7 @@ function renderBookings() {
     const visibleBookings = currentBookings();
     $("#bookingRows").innerHTML = visibleBookings.length ? visibleBookings.map((booking) => {
         const event = events.find((item) => item.id === booking.concertId);
-        return '<article class="booking-row">' + (event ? dateBadge(event) : "") + '<div class="event-main"><h3>' + html(event?.name || "Unavailable event") + '</h3><p>' + html(event?.venue || "This event has been removed.") + '</p><p>' + booking.quantity + (booking.quantity === 1 ? " ticket" : " tickets") + (event ? " / " + money(booking.quantity * event.price) : "") + '</p></div><div class="row-actions">' +
+        return '<article class="booking-row">' + (event ? dateBadge(event) : "") + '<div class="event-main"><h3>' + html(event?.name || "Unavailable event") + '</h3><p>Order No. ' + html(bookingOrderNo(booking)) + '</p><p>' + html(event?.venue || "This event has been removed.") + '</p><p>' + booking.quantity + (booking.quantity === 1 ? " ticket" : " tickets") + (event ? " / " + money(booking.quantity * event.price) : "") + '</p><p>Booked for ' + html(bookingBuyerName(booking)) + ' / ' + html(bookingBuyerEmail(booking)) + '</p></div><div class="row-actions">' +
             (event ? '<button class="icon-btn" data-action="edit" data-booking-id="' + html(booking.id) + '" aria-label="Edit booking" title="Edit booking">' + icon("pencil") + '</button>' : "") +
             '<button class="icon-btn danger-link" data-action="delete" data-booking-id="' + html(booking.id) + '" aria-label="Cancel booking" title="Cancel booking">' + icon("trash-2") + '</button></div></article>';
     }).join("") : '<div class="empty-state" id="emptyBookings"><h3>No bookings yet</h3><p>Your next concert is waiting.</p><a class="ticket-btn" href="index.html">Find tickets ' + icon("arrow-right") + '</a></div>';
