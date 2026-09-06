@@ -11,13 +11,14 @@ try {
     $input = app_input();
 
     if ($action === 'status') {
-        $profile = app_current_profile($pdo);
+        $admin = app_admin_authorized($pdo);
+        $profile = $admin ? null : app_current_profile($pdo);
         app_json([
             'ok' => true,
             'profile' => $profile,
             'accounts' => [],
             'bookings' => app_bookings($pdo, $profile['id'] ?? null),
-            'admin' => !empty($_SESSION['admin_signed_in']),
+            'admin' => $admin,
         ]);
     }
 
@@ -56,7 +57,8 @@ try {
             ':city' => $city,
         ]);
 
-        unset($_SESSION['profile_id'], $_SESSION['admin_signed_in']);
+        unset($_SESSION['profile_id']);
+        app_clear_admin_session($pdo);
         app_json(['ok' => true, 'profile' => null, 'accounts' => [], 'bookings' => [], 'message' => 'Account created.']);
     }
 
@@ -71,7 +73,7 @@ try {
         }
 
         $_SESSION['profile_id'] = $row['id'];
-        unset($_SESSION['admin_signed_in']);
+        app_clear_admin_session($pdo);
         $profile = app_current_profile($pdo);
         app_json([
             'ok' => true,
@@ -93,13 +95,13 @@ try {
             app_error('Incorrect username or password.', 401);
         }
 
-        $_SESSION['admin_signed_in'] = true;
+        app_create_admin_session($pdo);
         unset($_SESSION['profile_id']);
         app_json(['ok' => true, 'admin' => true, 'profile' => null, 'bookings' => []]);
     }
 
     if ($action === 'admin_sign_out') {
-        unset($_SESSION['admin_signed_in']);
+        app_clear_admin_session($pdo);
         app_json(['ok' => true, 'admin' => false]);
     }
 

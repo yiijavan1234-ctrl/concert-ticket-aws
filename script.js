@@ -106,8 +106,11 @@ function applyServerState(data) {
             sessionStorage.removeItem(KEYS.session);
             localStorage.removeItem(KEYS.profile);
         }
-        if (data.admin) sessionStorage.setItem(ADMIN_SESSION_KEY, "admin");
-        else sessionStorage.removeItem(ADMIN_SESSION_KEY);
+        if (data.admin) {
+            sessionStorage.setItem(ADMIN_SESSION_KEY, "admin");
+        } else {
+            clearAdminState();
+        }
     } catch { /* Server session is still the source of truth. */ }
 }
 async function refreshServerState() {
@@ -520,7 +523,9 @@ function adminSignedIn() {
     catch { return false; }
 }
 function clearAdminState() {
-    try { sessionStorage.removeItem(ADMIN_SESSION_KEY); }
+    try {
+        sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    }
     catch { /* Admin state is already cleared in memory. */ }
 }
 function adminLoginPage() {
@@ -536,9 +541,9 @@ function adminLoginPage() {
         e.preventDefault();
         if (serverAvailable) {
             try {
-                await requestJson(AUTH_URL, "admin_sign_in", { username: $("#adminUsername").value.trim(), password: $("#adminPassword").value });
+                const data = await requestJson(AUTH_URL, "admin_sign_in", { username: $("#adminUsername").value.trim(), password: $("#adminPassword").value });
                 clearLoginState();
-                sessionStorage.setItem(ADMIN_SESSION_KEY, "admin");
+                applyServerState(data);
                 shell(); adminPage(); refreshIcons(); $("#adminLogoutBtn").focus(); toast("Signed in as admin.");
             } catch (error) {
                 $("#adminLoginError").textContent = error.message;

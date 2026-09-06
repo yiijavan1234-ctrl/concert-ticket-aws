@@ -17,14 +17,15 @@ function require_profile(PDO $pdo): array
 
 function require_admin(): void
 {
-    if (empty($_SESSION['admin_signed_in'])) {
+    if (!app_admin_authorized(db())) {
         app_error('Admin sign in required.', 401);
     }
 }
 
 function app_state(PDO $pdo, ?array $profile = null): array
 {
-    if (!empty($_SESSION['admin_signed_in'])) {
+    $admin = app_admin_authorized($pdo);
+    if ($admin) {
         $profile = null;
     } else {
         $profile = $profile ?? app_current_profile($pdo);
@@ -35,7 +36,7 @@ function app_state(PDO $pdo, ?array $profile = null): array
         'accounts' => [],
         'profile' => $profile,
         'bookings' => app_bookings($pdo, $profile['id'] ?? null),
-        'admin' => !empty($_SESSION['admin_signed_in']),
+        'admin' => $admin,
     ];
 }
 

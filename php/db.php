@@ -58,6 +58,29 @@ function app_id(string $prefix): string
     }
 }
 
+function app_cookie_secure(): bool
+{
+    $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+    $forwarded = strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    return $https || $forwarded === 'https';
+}
+
+function app_admin_cookie_name(): string
+{
+    return 'soundwave_admin_sid';
+}
+
+function app_set_admin_cookie(string $token, int $expires): void
+{
+    setcookie(app_admin_cookie_name(), $token, [
+        'expires' => $expires,
+        'path' => '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure' => app_cookie_secure(),
+    ]);
+}
+
 function app_db_name(string $name): string
 {
     if (!preg_match('/^[A-Za-z0-9_]+$/', $name)) {
@@ -140,6 +163,15 @@ function app_migrate(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     ");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            id VARCHAR(80) PRIMARY KEY,
+            token_hash CHAR(64) NOT NULL UNIQUE,
+            expires_at DATETIME NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
     app_add_column($pdo, 'profiles', 'password_hash', 'VARCHAR(255) NULL AFTER email');
     app_add_column($pdo, 'bookings', 'order_no', 'VARCHAR(30) NULL AFTER concert_id');
     app_add_column($pdo, 'bookings', 'buyer_name', 'VARCHAR(120) NULL AFTER order_no');
@@ -148,6 +180,7 @@ function app_migrate(PDO $pdo): void
     app_make_not_null($pdo, 'bookings', 'order_no', 'VARCHAR(30)');
     app_make_not_null($pdo, 'bookings', 'buyer_name', 'VARCHAR(120)');
     app_make_not_null($pdo, 'bookings', 'buyer_email', 'VARCHAR(180)');
+    $pdo->exec('DELETE FROM admin_sessions WHERE expires_at < UTC_TIMESTAMP()');
 
     $count = (int)$pdo->query('SELECT COUNT(*) FROM events')->fetchColumn();
     if ($count === 0) {
@@ -200,6 +233,56 @@ function app_make_not_null(PDO $pdo, string $table, string $column, string $type
 function app_order_no(): string
 {
     return 'CT' . date('ymd') . mt_rand(1000, 9999);
+}
+
+function app_create_admin_session(PDO $pdo): void
+{
+    $token = bin2hex(random_bytes(32));
+    $expires = time() + 21600;
+    $stmt = $pdo->prepare('
+        INSERT INTO admin_sessions (id, token_hash, expires_at)
+        VALUES (:id, :token_hash, UTC_TIMESTAMP() + INTERVAL 6 HOUR)
+    ');
+    $stmt->execute([
+        ':id' => app_id('admin-session'),
+        ':token_hash' => hash('sha256', $token),
+    ]);
+
+    $_SESSION['admin_signed_in'] = true;
+    app_set_admin_cookie($token, $expires);
+}
+
+function app_clear_admin_session(PDO $pdo): void
+{
+    $token = (string)($_COOKIE[app_admin_cookie_name()] ?? '');
+    if ($token !== '') {
+        $stmt = $pdo->prepare('DELETE FROM admin_sessions WHERE token_hash = :token_hash');
+        $stmt->execute([':token_hash' => hash('sha256', $token)]);
+    }
+
+    unset($_SESSION['admin_signed_in']);
+    app_set_admin_cookie('', time() - 3600);
+}
+
+function app_admin_authorized(PDO $pdo): bool
+{
+    if (!empty($_SESSION['admin_signed_in'])) {
+        return true;
+    }
+
+    $token = (string)($_COOKIE[app_admin_cookie_name()] ?? '');
+    if ($token === '') {
+        return false;
+    }
+
+    $stmt = $pdo->prepare('SELECT id FROM admin_sessions WHERE token_hash = :token_hash AND expires_at > UTC_TIMESTAMP() LIMIT 1');
+    $stmt->execute([':token_hash' => hash('sha256', $token)]);
+    if (!$stmt->fetch()) {
+        return false;
+    }
+
+    $_SESSION['admin_signed_in'] = true;
+    return true;
 }
 
 function app_backfill_booking_columns(PDO $pdo): void
