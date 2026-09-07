@@ -200,7 +200,7 @@ function shell() {
             '<a href="' + ROOT + 'ticket.html?view=history">' + icon("receipt-text") + 'Order History</a>' +
             '<a href="' + ROOT + 'signout.html">' + icon("log-out") + 'Sign Out</a></div></details>' :
             '<a id="accountLink" href="' + (adminMode ? ROOT + 'admin/crud.html' : profileLink()) + '">' + icon(adminMode ? "shield-check" : "user-round") + '<span>' + (adminMode ? "Admin sign in" : "Sign In / Register") + '</span></a>') + '</div></nav>';
-    $("#siteFooter").innerHTML = '<a class="brand" href="' + ROOT + 'index.html">sound<span>wave</span>.</a><p>Demo events and prices. No payment is collected.<br>' + (serverAvailable ? 'Profiles and bookings are saved in the database.' : 'Profiles and bookings are saved only in this browser.') + '</p><a href="' + ROOT + 'admin/crud.html">Event management</a>';
+    $("#siteFooter").innerHTML = '<a class="brand" href="' + ROOT + 'index.html">sound<span>wave</span>.</a><p>Demo events and prices. No payment is collected.<br>' + (serverAvailable ? 'Profiles and bookings are saved in the database.' : 'Profiles and bookings are saved only in this browser.') + '</p>';
     $(".site-search").addEventListener("submit", (e) => {
         e.preventDefault();
         if (PAGE === "events") renderEventLists();
